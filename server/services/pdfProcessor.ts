@@ -1,5 +1,6 @@
-import { PDFDocument, PDFForm, PDFTextField } from 'pdf-lib';
+import { PDFDocument, PDFForm, PDFTextField, PDFCheckBox, PDFRadioGroup } from 'pdf-lib';
 import { ExtractedData, PDFTemplate, ConfidenceLevel } from '@shared/schema';
+import { objectStorageService } from '../objectStorage';
 
 export interface PDFProcessingResult {
   fileName: string;
@@ -16,48 +17,96 @@ export class PDFProcessor {
     confidenceScores: Record<string, ConfidenceLevel>
   ): Promise<PDFProcessingResult> {
     
-    // Create a basic PDF document as we don't have actual templates
-    const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([612, 792]); // Standard letter size
+    // Try to load the actual PDF template from storage
+    const templateBuffer = await objectStorageService.downloadPDFTemplate(template);
     
-    // This is a simplified implementation
-    // In a real application, you would load actual PDF templates
-    const { width, height } = page.getSize();
-    
-    page.drawText(`${this.getTemplateTitle(template)}`, {
-      x: 50,
-      y: height - 50,
-      size: 18,
-    });
-    
-    let yPosition = height - 100;
+    let pdfDoc: PDFDocument;
     let fieldsProcessed = 0;
     let fieldsTotal = 0;
     
-    // Map extracted data to PDF fields based on template type
-    const fieldMappings = this.getFieldMappings(template);
-    
-    for (const [fieldName, dataKey] of Object.entries(fieldMappings)) {
-      fieldsTotal++;
-      const value = extractedData[dataKey as keyof ExtractedData];
-      const confidence = confidenceScores[dataKey] || 'low';
+    if (templateBuffer) {
+      // Load the actual fillable PDF template
+      pdfDoc = await PDFDocument.load(templateBuffer);
+      const form = pdfDoc.getForm();
       
-      if (value) {
-        page.drawText(`${fieldName}: ${value} (${confidence} confidence)`, {
-          x: 50,
-          y: yPosition,
-          size: 12,
-        });
-        fieldsProcessed++;
-      } else {
-        page.drawText(`${fieldName}: [NOT PROVIDED]`, {
-          x: 50,
-          y: yPosition,
-          size: 12,
-        });
+      if (form) {
+        const fields = form.getFields();
+        fieldsTotal = fields.length;
+        
+        // Fill out the form fields with extracted data
+        for (const field of fields) {
+          const fieldName = field.getName();
+          const mappedDataKey = this.mapFieldNameToDataKey(fieldName, template);
+          
+          if (mappedDataKey && extractedData[mappedDataKey as keyof ExtractedData]) {
+            const value = String(extractedData[mappedDataKey as keyof ExtractedData]);
+            
+            try {
+              if (field.constructor.name === 'PDFTextField') {
+                (field as PDFTextField).setText(value);
+                fieldsProcessed++;
+              } else if (field.constructor.name === 'PDFCheckBox') {
+                // Handle checkbox fields - check if value indicates true/yes
+                const shouldCheck = ['true', 'yes', '1', 'checked', 'x'].includes(value.toLowerCase());
+                if (shouldCheck) {
+                  (field as PDFCheckBox).check();
+                } else {
+                  (field as PDFCheckBox).uncheck();
+                }
+                fieldsProcessed++;
+              } else if (field.constructor.name === 'PDFRadioGroup') {
+                // Handle radio button groups
+                const radioGroup = field as PDFRadioGroup;
+                const options = radioGroup.getOptions();
+                if (options.includes(value)) {
+                  radioGroup.select(value);
+                  fieldsProcessed++;
+                }
+              }
+            } catch (error) {
+              console.warn(`Could not fill field ${fieldName}:`, error);
+            }
+          }
+        }
       }
+    } else {
+      // Fallback to creating a basic document if template not found
+      console.warn(`PDF template ${template} not found in storage, creating basic document`);
+      pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([612, 792]);
+      const { width, height } = page.getSize();
       
-      yPosition -= 25;
+      page.drawText(`${this.getTemplateTitle(template)}`, {
+        x: 50,
+        y: height - 50,
+        size: 18,
+      });
+      
+      let yPosition = height - 100;
+      const fieldMappings = this.getFieldMappings(template);
+      fieldsTotal = Object.keys(fieldMappings).length;
+      
+      for (const [fieldName, dataKey] of Object.entries(fieldMappings)) {
+        const value = extractedData[dataKey as keyof ExtractedData];
+        const confidence = confidenceScores[dataKey] || 'low';
+        
+        if (value) {
+          page.drawText(`${fieldName}: ${value} (${confidence} confidence)`, {
+            x: 50,
+            y: yPosition,
+            size: 12,
+          });
+          fieldsProcessed++;
+        } else {
+          page.drawText(`${fieldName}: [NOT PROVIDED]`, {
+            x: 50,
+            y: yPosition,
+            size: 12,
+          });
+        }
+        
+        yPosition -= 25;
+      }
     }
     
     const pdfBytes = await pdfDoc.save();
@@ -69,6 +118,53 @@ export class PDFProcessor {
       fieldsProcessed,
       fieldsTotal
     };
+  }
+
+  // Map PDF form field names to our extracted data keys
+  private mapFieldNameToDataKey(fieldName: string, template: PDFTemplate): string | null {
+    const normalizedFieldName = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    // Common field name mappings
+    const mappings: Record<string, string> = {
+      'firstname': 'firstName',
+      'lastname': 'lastName',
+      'customerfirstname': 'firstName',
+      'customerlastname': 'lastName',
+      'buyerfirstname': 'firstName',
+      'buyerlastname': 'lastName',
+      'address': 'address',
+      'customeraddress': 'address',
+      'buyeraddress': 'address',
+      'licenseNumber': 'licenseNumber',
+      'drivinglicensenumber': 'licenseNumber',
+      'dllicense': 'licenseNumber',
+      'licenseexpiration': 'licenseExpiration',
+      'licenseexp': 'licenseExpiration',
+      'insurancecompany': 'insuranceCompany',
+      'insurance': 'insuranceCompany',
+      'insurer': 'insuranceCompany',
+      'vin': 'newCarVin',
+      'vehiclevin': 'newCarVin',
+      'newcarvin': 'newCarVin',
+      'vehicleidentificationnumber': 'newCarVin',
+      'odometer': 'newCarOdometer',
+      'mileage': 'newCarOdometer',
+      'newcarodometer': 'newCarOdometer',
+      'vehiclemileage': 'newCarOdometer',
+      'tradeinvin': 'tradeInVin',
+      'tradevin': 'tradeInVin',
+      'tradeinodometer': 'tradeInOdometer',
+      'tradeodometer': 'tradeInOdometer',
+      'tradeinmileage': 'tradeInOdometer',
+      'tradeinyear': 'tradeInYear',
+      'tradeyear': 'tradeInYear',
+      'tradeinmake': 'tradeInMake',
+      'trademake': 'tradeInMake',
+      'tradeinmodel': 'tradeInModel',
+      'trademodel': 'tradeInModel',
+    };
+
+    return mappings[normalizedFieldName] || null;
   }
   
   private getTemplateTitle(template: PDFTemplate): string {

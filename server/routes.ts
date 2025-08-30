@@ -4,6 +4,7 @@ import multer from "multer";
 import { storage } from "./storage";
 import { geminiService } from "./services/gemini";
 import { pdfProcessor } from "./services/pdfProcessor";
+import { objectStorageService } from "./objectStorage";
 import { insertDealProcessingJobSchema, DocumentType, PDFTemplate, ExtractedData, ConfidenceLevel } from "@shared/schema";
 import { z } from "zod";
 
@@ -23,6 +24,66 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  
+  // Get list of available PDF templates
+  app.get("/api/templates", async (req, res) => {
+    try {
+      const templates = await objectStorageService.listPDFTemplates();
+      res.json({ templates });
+    } catch (error) {
+      console.error("Error listing templates:", error);
+      res.status(500).json({ error: "Failed to list templates" });
+    }
+  });
+
+  // Upload a new PDF template
+  app.post("/api/templates/upload", upload.single('file'), async (req, res) => {
+    try {
+      const { templateName } = req.body;
+      
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      if (!templateName || typeof templateName !== 'string') {
+        return res.status(400).json({ error: "Template name is required" });
+      }
+
+      if (req.file.mimetype !== 'application/pdf') {
+        return res.status(400).json({ error: "Only PDF files are allowed" });
+      }
+
+      // Upload the PDF template to storage
+      await objectStorageService.uploadPDFTemplate(templateName, req.file.buffer);
+      
+      res.json({ 
+        success: true,
+        message: `Template '${templateName}' uploaded successfully`,
+        templateName
+      });
+
+    } catch (error) {
+      console.error("Error uploading template:", error);
+      res.status(500).json({ error: "Failed to upload template" });
+    }
+  });
+
+  // Download a PDF template
+  app.get("/api/templates/:templateName", async (req, res) => {
+    try {
+      const { templateName } = req.params;
+      const file = await objectStorageService.searchPDFTemplate(templateName);
+      
+      if (!file) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+
+      await objectStorageService.downloadObject(file, res);
+    } catch (error) {
+      console.error("Error downloading template:", error);
+      res.status(500).json({ error: "Failed to download template" });
+    }
+  });
   
   // Create a new deal processing job
   app.post("/api/deals", async (req, res) => {

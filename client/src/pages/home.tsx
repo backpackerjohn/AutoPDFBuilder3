@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -29,6 +29,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useToast } from '@/hooks/use-toast';
 import { FileUpload } from '@/components/file-upload';
 import { ConfidenceBadge } from '@/components/confidence-badge';
+import { TemplateUpload } from '@/components/template-upload';
 import { apiRequest } from '@/lib/queryClient';
 import type { DealProcessingJob } from '@shared/schema';
 import type { UploadedFile, ProcessingStatus, ReviewField, GeneratedDocument } from '@/lib/types';
@@ -40,14 +41,7 @@ const dealFormSchema = z.object({
 
 type DealFormData = z.infer<typeof dealFormSchema>;
 
-const PDF_TEMPLATES = [
-  { id: 'deal-check', label: 'Deal Check List' },
-  { id: 'delivery-receipt', label: 'Delivery Receipt' },
-  { id: 'we-owe', label: 'We Owe' },
-  { id: 'trade-agreement', label: 'Trade Agreement' },
-  { id: 'bill-of-sale', label: 'Bill of Sale' },
-  { id: 'odometer-disclosure', label: 'Odometer Disclosure' },
-];
+// PDF templates will be loaded dynamically from the server
 
 export default function Home() {
   const { toast } = useToast();
@@ -64,6 +58,7 @@ export default function Home() {
   const [reviewFields, setReviewFields] = useState<ReviewField[]>([]);
   const [reviewValues, setReviewValues] = useState<Record<string, string>>({});
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
+  const [availableTemplates, setAvailableTemplates] = useState<Array<{id: string; label: string}>>([]);
 
   const form = useForm<DealFormData>({
     resolver: zodResolver(dealFormSchema),
@@ -178,6 +173,21 @@ export default function Home() {
       });
     },
   });
+
+  // Load available PDF templates
+  const { data: templatesData } = useQuery<{ templates: string[] }>({
+    queryKey: ['/api/templates'],
+  });
+
+  useEffect(() => {
+    if (templatesData?.templates) {
+      const templates = templatesData.templates.map(templateName => ({
+        id: templateName,
+        label: formatTemplateName(templateName)
+      }));
+      setAvailableTemplates(templates);
+    }
+  }, [templatesData]);
 
   // Check if review is needed query
   const { data: reviewData } = useQuery<{
@@ -344,6 +354,14 @@ export default function Home() {
     if (['tradeInVin', 'tradeInOdometer'].includes(key)) return 'Trade-in Photos';
     if (['tradeInYear', 'tradeInMake', 'tradeInModel'].includes(key)) return 'Deal Information';
     return 'Unknown';
+  };
+
+  const formatTemplateName = (templateName: string): string => {
+    return templateName
+      .replace(/[-_]/g, ' ')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   };
 
   return (
@@ -534,14 +552,19 @@ export default function Home() {
             {/* Step 2: Select PDF Templates */}
             <Card data-testid="step-pdf-templates">
               <CardHeader>
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
-                    2
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
+                      2
+                    </div>
+                    <div>
+                      <CardTitle>Select PDF Templates</CardTitle>
+                      <p className="text-sm text-muted-foreground">Choose which documents are required for this deal</p>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle>Select PDF Templates</CardTitle>
-                    <p className="text-sm text-muted-foreground">Choose which documents are required for this deal</p>
-                  </div>
+                  <TemplateUpload onUploadComplete={() => {
+                    queryClient.invalidateQueries({ queryKey: ['/api/templates'] });
+                  }} />
                 </div>
               </CardHeader>
               <CardContent>
@@ -551,7 +574,7 @@ export default function Home() {
                   render={() => (
                     <FormItem>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {PDF_TEMPLATES.map((template) => (
+                        {availableTemplates.map((template) => (
                           <FormField
                             key={template.id}
                             control={form.control}
