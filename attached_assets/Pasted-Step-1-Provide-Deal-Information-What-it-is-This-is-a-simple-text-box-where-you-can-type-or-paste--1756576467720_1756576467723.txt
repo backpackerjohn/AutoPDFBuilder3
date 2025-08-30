@@ -1,0 +1,44 @@
+Step 1: Provide Deal Information
+What it is: This is a simple text box where you can type or paste any additional information related to the car deal.
+What goes here: This is for details that might not be available in the official documents you upload later. A perfect example is information about the customer's trade-in vehicle, such as "The customer is trading in their 2019 Honda Civic." You can also add notes about the deal, like down payment amounts, financing terms, or specific customer requests.
+What the AI does: The AI reads this text and uses it as a secondary source of information. It specifically looks for details it can't find in the images, like the year, make, and model of a trade-in. It uses this context to fill in the blanks, ensuring the final documents are as complete as possible.
+Step 3: (Optional) Upload Customer Documents
+This section is for uploading photos of physical documents. The AI is trained to recognize each document type and extract specific, relevant information.
+Customer Documents (Printable)
+These are documents that are often required for the deal jacket and may need to be printed along with the final paperwork.
+Driver's License:
+Purpose: To capture the customer's core identity information.
+AI Action: The AI scans the image of the driver's license to automatically extract the customer's first name, last name, full address, driver's license number, and the license expiration date.
+Insurance Card:
+Purpose: To get proof of insurance.
+AI Action: The AI specifically looks for and extracts only the name of the insurance company. It is instructed to ignore other details (like policy numbers or VINs on the card) to avoid mixing up the new car's VIN with the one on the insurance document.
+Spot Registration:
+Purpose: For record-keeping and printing. This is often a temporary registration document.
+AI Action: The AI does not extract any data from this image. It is simply attached to the final package so you can easily print it with the other documents.
+New Car Details (Data Only)
+These uploads are purely for data extraction and will not be included in the printable package.
+New Car VIN:
+Purpose: To accurately capture the Vehicle Identification Number of the car being sold.
+AI Action: You upload a clear photo of the car's VIN sticker (usually on the door jamb or dashboard), and the AI reads the 17-character alphanumeric code.
+New Car Odometer:
+Purpose: To record the exact mileage of the new car at the time of sale.
+AI Action: You upload a photo of the car's odometer display, and the AI reads the mileage.
+Trade-in Details (Data Only)
+Similar to the "New Car" section, this is for extracting data about the vehicle the customer is trading in.
+Trade-in VIN:
+Purpose: To capture the VIN of the customer's trade-in vehicle.
+AI Action: The AI reads the VIN from a photo you provide.
+Trade-in Odometer:
+Purpose: To record the mileage of the trade-in vehicle.
+AI Action: The AI reads the mileage from a photo of the trade-in's odometer.
+Step 4: Select PDF Templates
+What it is: This section lists all the official, fillable PDF forms your dealership uses for a car deal (e.g., Bill of Sale, Odometer Disclosure, We Owe form, etc.).
+What happens: You simply check the box next to each document that is required for this specific deal.
+Step 5: Generate & Download (The Magic Step)
+When you click the "Generate Documents" button, the application brings everything together:
+Consolidation: It gathers all the information you provided: the text from Step 1 and all the data extracted by the AI from the images in Step 3.
+Analysis & Mapping: The AI looks at the PDF templates you selected in Step 4. It reads the names of every single fillable field inside those PDFs (like "Customer_FirstName", "VehicleIdentificationNumber", "TradeInOdometer", etc.).
+Intelligent Filling: The AI then performs its core task: it intelligently maps the consolidated data to the correct fields in each PDF. It understands context, so it knows to put the newCarVin into the main "VIN" field and the tradeVin into a field in the "Trade-In" section of a form.
+Confidence Check: After mapping the data, the AI assigns a confidence score ("high", "medium", or "low") to each field it filled.
+If all fields are "high" confidence (e.g., it got the name directly from a driver's license), it will automatically generate and download the final, filled-out PDFs.
+If any fields are "medium" or "low" confidence (e.g., it had to guess based on context), a review screen will pop up, allowing you to quickly check and approve its work before the final documents are created.
