@@ -298,14 +298,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             job.confidenceScores || {}
           );
           
-          // In a real app, you'd save the PDF to storage and return a download URL
-          // For now, we'll return the filename and indicate success
+          // Store PDF temporarily and create download URL
+          const downloadKey = objectStorageService.storeTempPDF(result.fileName, Buffer.from(result.pdfBytes));
+          
           generatedDocs.push({
             template,
             fileName: result.fileName,
             fieldsProcessed: result.fieldsProcessed,
             fieldsTotal: result.fieldsTotal,
-            downloadUrl: `/api/deals/${id}/download/${encodeURIComponent(result.fileName)}`
+            downloadUrl: `/api/download/${downloadKey}`
           });
           
         } catch (error) {
@@ -356,6 +357,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error checking review status:", error);
       res.status(500).json({ error: "Failed to check review status" });
+    }
+  });
+
+  // Download generated PDF endpoint
+  app.get("/api/download/:downloadKey", async (req, res) => {
+    try {
+      const { downloadKey } = req.params;
+      const pdfData = objectStorageService.getTempPDF(downloadKey);
+      
+      if (!pdfData) {
+        return res.status(404).json({ error: "Document not found or expired" });
+      }
+
+      res.set({
+        'Content-Type': pdfData.contentType,
+        'Content-Disposition': 'attachment; filename="document.pdf"',
+        'Content-Length': pdfData.buffer.length.toString(),
+      });
+
+      res.send(pdfData.buffer);
+    } catch (error) {
+      console.error("Error downloading document:", error);
+      res.status(500).json({ error: "Failed to download document" });
     }
   });
 

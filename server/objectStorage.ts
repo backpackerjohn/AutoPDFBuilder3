@@ -33,7 +33,50 @@ export class ObjectNotFoundError extends Error {
 
 // The object storage service is used to interact with the object storage service.
 export class ObjectStorageService {
+  // Store generated PDFs temporarily (in memory for downloads)
+  private tempPDFStorage: Map<string, { buffer: Buffer; contentType: string; createdAt: Date }> = new Map();
+
   constructor() {}
+
+  // Clean up old temporary files (older than 1 hour)
+  private cleanupTempStorage() {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const keysToDelete: string[] = [];
+    
+    this.tempPDFStorage.forEach((value, key) => {
+      if (value.createdAt < oneHourAgo) {
+        keysToDelete.push(key);
+      }
+    });
+    
+    keysToDelete.forEach(key => {
+      this.tempPDFStorage.delete(key);
+    });
+  }
+
+  // Store a generated PDF temporarily for download
+  storeTempPDF(fileName: string, pdfBuffer: Buffer): string {
+    this.cleanupTempStorage(); // Clean up old files first
+    
+    const downloadKey = `${Date.now()}_${fileName}`;
+    this.tempPDFStorage.set(downloadKey, {
+      buffer: pdfBuffer,
+      contentType: 'application/pdf',
+      createdAt: new Date()
+    });
+    
+    return downloadKey;
+  }
+
+  // Retrieve and remove a temporary PDF
+  getTempPDF(downloadKey: string): { buffer: Buffer; contentType: string } | null {
+    const pdfData = this.tempPDFStorage.get(downloadKey);
+    if (pdfData) {
+      this.tempPDFStorage.delete(downloadKey); // Remove after retrieval
+      return { buffer: pdfData.buffer, contentType: pdfData.contentType };
+    }
+    return null;
+  }
 
   // Gets the public object search paths.
   getPublicObjectSearchPaths(): Array<string> {

@@ -17,6 +17,16 @@ export class PDFProcessor {
     confidenceScores: Record<string, ConfidenceLevel>
   ): Promise<PDFProcessingResult> {
     
+    // Add current date to extracted data
+    const currentDate = new Date();
+    const formattedDate = this.formatDateForPDF(currentDate);
+    const enhancedData = {
+      ...extractedData,
+      currentDate: formattedDate,
+      todaysDate: formattedDate,
+      date: formattedDate,
+    };
+    
     // Try to load the actual PDF template from storage
     const templateBuffer = await objectStorageService.downloadPDFTemplate(template);
     
@@ -38,8 +48,8 @@ export class PDFProcessor {
           const fieldName = field.getName();
           const mappedDataKey = this.mapFieldNameToDataKey(fieldName, template);
           
-          if (mappedDataKey && extractedData[mappedDataKey as keyof ExtractedData]) {
-            const value = String(extractedData[mappedDataKey as keyof ExtractedData]);
+          if (mappedDataKey && enhancedData[mappedDataKey as keyof ExtractedData]) {
+            const value = String(enhancedData[mappedDataKey as keyof ExtractedData]);
             
             try {
               if (field.constructor.name === 'PDFTextField') {
@@ -87,7 +97,7 @@ export class PDFProcessor {
       fieldsTotal = Object.keys(fieldMappings).length;
       
       for (const [fieldName, dataKey] of Object.entries(fieldMappings)) {
-        const value = extractedData[dataKey as keyof ExtractedData];
+        const value = enhancedData[dataKey as keyof ExtractedData];
         const confidence = confidenceScores[dataKey] || 'low';
         
         if (value) {
@@ -165,6 +175,14 @@ export class PDFProcessor {
     };
 
     return mappings[normalizedFieldName] || null;
+  }
+
+  // Format date for PDF forms (MM/DD/YY format)
+  private formatDateForPDF(date: Date): string {
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const year = String(date.getFullYear()).slice(-2);
+    return `${month}/${day}/${year}`;
   }
   
   private getTemplateTitle(template: PDFTemplate): string {
