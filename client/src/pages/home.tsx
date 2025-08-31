@@ -335,24 +335,26 @@ export default function Home() {
     generateDocumentsMutation.mutate({ selectedTemplates, reviewedData });
   };
 
-  const handleDownloadDocument = async (document: GeneratedDocument) => {
-    try {
-      const res = await fetch(document.downloadUrl, { method: 'GET' });
-      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = document.fileName || 'document.pdf';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast({ title: 'Download started', description: `Downloading ${document.fileName}` });
-    } catch (error: any) {
-      toast({ title: 'Download failed', description: error?.message || 'Failed to download document.', variant: 'destructive' });
-    }
-  };
+const handleDownloadDocument = async (doc: GeneratedDocument) => {
+  try {
+    const res = await fetch(doc.downloadUrl, { method: 'GET' });
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const a = window.document.createElement('a');
+    a.href = url;
+    a.download = doc.fileName || 'document.pdf';
+    window.document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    toast({ title: 'Download started', description: `Downloading ${doc.fileName}` });
+  } catch (error: any) {
+    toast({ title: 'Download failed', description: error?.message || 'Failed to download document.', variant: 'destructive' });
+  }
+};
 
   const handleDownloadAll = async () => {
     const combined = generatedDocuments.find(d => d.template === 'combined');
