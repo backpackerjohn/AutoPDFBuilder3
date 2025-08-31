@@ -202,7 +202,7 @@ export class PDFProcessor {
         const imageBytes = new Uint8Array(file.buffer);
 
         let image;
-        const mimeType = file.type.toLowerCase();
+        const mimeType = (file.mimetype || file.type || '').toLowerCase();
 
         // Embed the image based on its type
         if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
@@ -210,7 +210,9 @@ export class PDFProcessor {
         } else if (mimeType.includes('png')) {
           image = await pdfDoc.embedPng(imageBytes);
         } else {
-          console.warn(`Unsupported image type for ${documentType}: ${mimeType}`);
+          console.warn(`Unsupported image type for ${documentType}: ${mimeType}. Supported types: JPEG, JPG, PNG`);
+          // Still add to the included list but note it was skipped
+          addedImages.push(`${documentType.replace(/-/g, ' ')} (unsupported format: ${mimeType})`);
           continue;
         }
 

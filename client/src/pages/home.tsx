@@ -118,10 +118,18 @@ export default function Home() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/deals', currentJobId] });
     },
-    onError: () => {
+    onError: (error: any, { documentType }) => {
+      // Roll back optimistic UI state
+      setUploadedFiles(prev => {
+        const { [documentType]: _, ...rest } = prev;
+        return rest;
+      });
+      
+      // Show specific error message if available
+      const errorMessage = error?.message || 'Failed to process document. Please try again.';
       toast({
         title: 'Upload failed',
-        description: 'Failed to process document. Please try again.',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -224,6 +232,7 @@ export default function Home() {
       await createDealMutation.mutateAsync(dealData);
     }
 
+    // Only set optimistic UI state, will be rolled back on error
     setUploadedFiles(prev => ({ ...prev, [documentType]: file }));
     uploadFileMutation.mutate({ file, documentType });
   };
@@ -316,16 +325,30 @@ export default function Home() {
     generateDocumentsMutation.mutate({ selectedTemplates, reviewedData });
   };
 
-  const handleDownloadDocument = (document: GeneratedDocument) => {
-    // In a real app, this would trigger a file download
-    toast({
-      title: 'Download started',
-      description: `Downloading ${document.fileName}`,
-    });
+  const handleDownloadDocument = async (document: GeneratedDocument) => {
+    try {
+      // Use window.location for simple download with attachment headers
+      window.location.href = document.downloadUrl;
+      
+      toast({
+        title: 'Download started',
+        description: `Downloading ${document.fileName}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Download failed',
+        description: 'Failed to download document. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleDownloadAll = () => {
-    generatedDocuments.forEach(doc => handleDownloadDocument(doc));
+  const handleDownloadAll = async () => {
+    for (const doc of generatedDocuments) {
+      await handleDownloadDocument(doc);
+      // Small delay between downloads to avoid overwhelming browser
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   };
 
   const handleStartNewDeal = () => {

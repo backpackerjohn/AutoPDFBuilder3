@@ -1,0 +1,116 @@
+“Downloading…” but no files download
+
+Cause: The download buttons are placeholders. Your client never actually downloads anything.
+
+In client/src/pages/home.tsx, handleDownloadDocument only shows a toast:
+
+const handleDownloadDocument = (document: GeneratedDocument) => {
+  // In a real app, this would trigger a file download
+  toast({ title: 'Download started', description: `Downloading ${document.fileName}` });
+};
+
+
+Yet your server is correctly exposing real files via:
+
+GET /api/download/:downloadKey with Content-Disposition: attachment (see server/routes.ts lines ~449–455).
+
+The generate route returns documents[] each with a downloadUrl, plus an optional combinedDownloadUrl.
+
+✅ Fix (minimal): actually use the URL.
+
+// home.tsx
+const handleDownloadDocument = async (doc: GeneratedDocument) => {
+  // simplest: let the browser handle attachment headers
+  window.location.href = doc.downloadUrl;
+};
+
+// Optionally: robust Blob approach (keeps filename)
+const downloadViaBlob = async (doc: GeneratedDocument) => {
+  const res = await fetch(doc.downloadUrl);
+  if (!res.ok) throw new Error('Download failed');
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = doc.fileName.endsWith('.pdf') ? doc.fileName : `${doc.fileName}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+};
+
+
+Also wire “Download All” to call the same function for each generatedDocuments item.
+
+2) “Upload shows an error, but the image seems uploaded”
+
+Why that happens:
+
+You optimistically set the local “uploaded file” state before the server confirms:
+
+// home.tsx
+setUploadedFiles(prev => ({ ...prev, [documentType]: file }));
+uploadFileMutation.mutate({ file, documentType });
+
+
+If the request fails (status !ok), you show an error toast — but you don’t roll back the optimistic UI, so the tile/preview remains and it looks uploaded.
+
+✅ Fix options (choose one):
+
+Option A — only show the file after a successful upload
+
+const handleFileUpload = async (file: File, documentType: string) => {
+  if (!currentJobId) {
+    const dealData = form.getValues();
+    await createDealMutation.mutateAsync(dealData);
+  }
+  // Don’t set local state yet
+  uploadFileMutation.mutate({ file, documentType });
+};
+
+// On success
+onSuccess: (result, { documentType, file }) => {
+  setUploadedFiles(prev => ({ ...prev, [documentType]: file }));
+  toast({ title: 'Document processed', description: `${documentType} uploaded and analyzed successfully.` });
+}
+
+
+Option B — keep optimistic UI but roll back on error
+
+// keep setUploadedFiles(...) before mutate
+onError: (_err, { documentType }) => {
+  setUploadedFiles(prev => {
+    const { [documentType]: _, ...rest } = prev;
+    return rest;
+  });
+  toast({ title: 'Upload failed', description: 'Failed to process document. Please try again.', variant: 'destructive' });
+}
+
+
+Also, when the server returns a JSON error like { error: "Invalid document type" }, consider surfacing that exact message in the toast instead of the generic “Upload failed”.
+
+3) HEIC support gap (this can also look like “errors”)
+
+You told me you want HEIC and JPEG accepted. The server currently embeds only JPG/PNG in the “combined images” PDF:
+
+server/services/pdfProcessor.ts → supports jpeg/jpg via pdfDoc.embedJpg(...) and png via pdfDoc.embedPng(...). Anything else is skipped with a warning.
+
+Result: HEIC uploads “succeed” from the user’s POV, but are omitted from the combined PDF. That’s confusing.
+
+✅ Fix options:
+
+Server-side conversion (best UX): add HEIC → JPEG conversion before embedding. E.g., use sharp with HEIF support (libvips with HEIF enabled) or a Node HEIC converter library. Then treat converted bytes as JPEG.
+
+Client-side conversion (quickest): detect image/heic and convert to JPEG via an offscreen <canvas> before posting.
+
+And update the UI copy to explicitly say what’s supported if you keep skipping unsupported types.
+
+4) File size limits can cause intermittent “upload failed”
+
+multer limit is 10MB (server/routes.ts lines ~12–16). Many modern phone photos exceed this (especially HEIC→JPEG).
+
+If a big image hits the limit, you’ll get a failure, but the optimistic UI still shows the preview (see #2), which looks like a contradiction.
+
+✅ Fix: Raise limit (e.g., 20–25MB) and/or compress on the client before upload.
+
+// server/routes.ts
+limits: { fileSize: 25 * 1024 * 1024 },

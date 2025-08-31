@@ -12,7 +12,7 @@ import { z } from "zod";
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 25 * 1024 * 1024, // 25MB limit for modern photos
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
