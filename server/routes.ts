@@ -226,6 +226,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       console.error("Error processing upload:", error);
+      
+      // Handle Gemini API overload gracefully
+      if (error instanceof Error && error.message.includes('overloaded')) {
+        // Still store the file even if AI processing fails
+        if (!dealFilesStorage.has(req.params.id)) {
+          dealFilesStorage.set(req.params.id, {});
+        }
+        const jobFiles = dealFilesStorage.get(req.params.id)!;
+        jobFiles[req.body.documentType] = req.file!;
+        
+        // Get the job first 
+        const currentJob = await storage.getDealProcessingJob(req.params.id);
+        if (!currentJob) {
+          return res.status(404).json({ error: "Deal not found" });
+        }
+        
+        // Update job with file stored but no extracted data
+        const updatedJob = await storage.updateDealProcessingJob(req.params.id, {
+          uploadedFiles: {
+            ...currentJob.uploadedFiles,
+            [req.body.documentType]: `uploaded_${req.body.documentType}_${Date.now()}`
+          }
+        });
+        
+        return res.json({
+          success: true,
+          extractedData: {},
+          confidence: {},
+          job: updatedJob,
+          warning: "AI processing temporarily unavailable - file uploaded successfully"
+        });
+      }
+      
       res.status(500).json({ error: "Failed to process document" });
     }
   });
@@ -285,13 +318,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Deal not found" });
       }
 
-      // Validate selected templates
+      // Validate that templates exist (get available templates from object storage)
+      const availableTemplates = await objectStorageService.listPDFTemplates();
+      const templateNames = availableTemplates; // listPDFTemplates returns string array
+      
       const validTemplates = selectedTemplates?.filter((template: string) => 
-        PDFTemplate.safeParse(template).success
+        templateNames.includes(template)
       ) || [];
 
       if (validTemplates.length === 0) {
-        return res.status(400).json({ error: "No valid templates selected" });
+        return res.status(400).json({ 
+          error: "No valid templates selected",
+          availableTemplates: templateNames 
+        });
       }
 
       // Use reviewed data if provided, otherwise use extracted data
@@ -303,7 +342,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const template of validTemplates) {
         try {
           const result = await pdfProcessor.fillPDFTemplate(
-            template as PDFTemplate,
+            template,
             finalData,
             job.confidenceScores || {}
           );
@@ -338,7 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (uploadedFiles && Object.keys(uploadedFiles).length > 0) {
         try {
           const combinedResult = await pdfProcessor.createCombinedPDF(
-            validTemplates as PDFTemplate[],
+            validTemplates,
             finalData,
             job.confidenceScores || {},
             uploadedFiles

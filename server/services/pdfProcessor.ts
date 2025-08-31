@@ -19,7 +19,7 @@ export interface CombinedPDFResult {
 export class PDFProcessor {
   
   async fillPDFTemplate(
-    template: PDFTemplate, 
+    template: string, 
     extractedData: Partial<ExtractedData>,
     confidenceScores: Record<string, ConfidenceLevel>
   ): Promise<PDFProcessingResult> {
@@ -138,7 +138,7 @@ export class PDFProcessor {
   }
 
   // Map PDF form field names to our extracted data keys
-  private mapFieldNameToDataKey(fieldName: string, template: PDFTemplate): string | null {
+  private mapFieldNameToDataKey(fieldName: string, template: string): string | null {
     const normalizedFieldName = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
     
     // Common field name mappings
@@ -283,7 +283,7 @@ export class PDFProcessor {
 
   // Create a combined PDF with all filled forms and uploaded images
   async createCombinedPDF(
-    selectedTemplates: PDFTemplate[],
+    selectedTemplates: string[],
     extractedData: Partial<ExtractedData>,
     confidenceScores: Record<string, ConfidenceLevel>,
     uploadedFiles: Record<string, File>
@@ -344,7 +344,7 @@ export class PDFProcessor {
     return `Deal_Package_${customerName}_${dateStr}.pdf`;
   }
   
-  private getTemplateTitle(template: PDFTemplate): string {
+  private getTemplateTitle(template: string): string {
     const titles: Record<PDFTemplate, string> = {
       'deal-check': 'Deal Check List',
       'delivery-receipt': 'Delivery Receipt',
@@ -356,7 +356,7 @@ export class PDFProcessor {
     return titles[template];
   }
   
-  private getFieldMappings(template: PDFTemplate): Record<string, string> {
+  private getFieldMappings(template: string): Record<string, string> {
     // Define which extracted data fields map to which PDF form fields
     // This would be customized for each actual PDF template
     const baseMappings = {
@@ -397,7 +397,7 @@ export class PDFProcessor {
     }
   }
   
-  private generateFileName(template: PDFTemplate, extractedData: Partial<ExtractedData>): string {
+  private generateFileName(template: string, extractedData: Partial<ExtractedData>): string {
     const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
     const customerName = extractedData.firstName && extractedData.lastName 
       ? `_${extractedData.firstName}_${extractedData.lastName}`
