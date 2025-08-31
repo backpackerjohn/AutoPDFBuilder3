@@ -66,6 +66,52 @@ Only include fields where you can extract data. Use null for missing data.`;
     return JSON.parse(rawJson) as ExtractionResult;
   }
 
+  async mapFormFields(
+    templateName: string,
+    fieldNames: string[],
+    extractedData: any,
+    contextText?: string
+  ): Promise<Record<string, string | boolean>> {
+    const systemPrompt = `You are an expert at mapping extracted data to PDF form fields.
+
+Template: ${templateName}
+Available extracted data: ${JSON.stringify(extractedData)}
+${contextText ? `Context: ${contextText}` : ''}
+
+Map the following PDF form field names to appropriate values from the extracted data:
+${fieldNames.map(name => `- ${name}`).join('\n')}
+
+Rules:
+- Format dates as MM/DD/YY (e.g., 03/15/25)
+- Format phone numbers as ###-###-#### 
+- Return boolean true/false for checkbox fields
+- Only include fields you can confidently map
+- Use extracted data values when available
+
+Respond with JSON: { "fieldName": "value" }`;
+
+    const response = await ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || "gemini-1.5-pro",
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+      },
+      contents: systemPrompt,
+    });
+
+    const rawJson = response.text;
+    if (!rawJson) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(rawJson) as Record<string, string | boolean>;
+    } catch (error) {
+      console.error("Failed to parse Gemini form mapping response:", error);
+      return {};
+    }
+  }
+
   async extractFromInsuranceCard(imageBase64: string): Promise<ExtractionResult> {
     const systemPrompt = `You are an expert at extracting information from insurance cards.
 Extract only the insurance company name. Ignore policy numbers, VINs, and other details.

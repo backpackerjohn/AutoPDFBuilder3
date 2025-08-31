@@ -337,27 +337,29 @@ export default function Home() {
 
   const handleDownloadDocument = async (document: GeneratedDocument) => {
     try {
-      // Use window.location for simple download with attachment headers
-      window.location.href = document.downloadUrl;
-      
-      toast({
-        title: 'Download started',
-        description: `Downloading ${document.fileName}`,
-      });
-    } catch (error) {
-      toast({
-        title: 'Download failed',
-        description: 'Failed to download document. Please try again.',
-        variant: 'destructive',
-      });
+      const res = await fetch(document.downloadUrl, { method: 'GET' });
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = document.fileName || 'document.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Download started', description: `Downloading ${document.fileName}` });
+    } catch (error: any) {
+      toast({ title: 'Download failed', description: error?.message || 'Failed to download document.', variant: 'destructive' });
     }
   };
 
   const handleDownloadAll = async () => {
+    const combined = generatedDocuments.find(d => d.template === 'combined');
+    if (combined) return handleDownloadDocument(combined);
     for (const doc of generatedDocuments) {
       await handleDownloadDocument(doc);
-      // Small delay between downloads to avoid overwhelming browser
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(r => setTimeout(r, 600));
     }
   };
 

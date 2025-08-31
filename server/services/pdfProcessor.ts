@@ -1,6 +1,7 @@
 import { PDFDocument, PDFForm, PDFTextField, PDFCheckBox, PDFRadioGroup, rgb } from 'pdf-lib';
 import { ExtractedData, PDFTemplate, ConfidenceLevel } from '@shared/schema';
 import { objectStorageService } from '../objectStorage';
+import { GeminiService } from './gemini';
 
 export interface PDFProcessingResult {
   fileName: string;
@@ -21,7 +22,8 @@ export class PDFProcessor {
   async fillPDFTemplate(
     template: string, 
     extractedData: Partial<ExtractedData>,
-    confidenceScores: Record<string, ConfidenceLevel>
+    confidenceScores: Record<string, ConfidenceLevel>,
+    contextText?: string
   ): Promise<PDFProcessingResult> {
     
     // Add current date to extracted data
@@ -50,21 +52,43 @@ export class PDFProcessor {
         const fields = form.getFields();
         fieldsTotal = fields.length;
         
+        // Collect field names for Gemini mapping
+        const fieldNames = fields.map(f => f.getName());
+        
+        // Get AI mapping if enabled and available
+        let aiMapping: Record<string, string | boolean> = {};
+        if (process.env.USE_GEMINI_FORM_FILL === '1' && process.env.GEMINI_API_KEY) {
+          try {
+            const geminiService = new GeminiService();
+            aiMapping = await geminiService.mapFormFields(template, fieldNames, enhancedData, contextText);
+          } catch (error) {
+            console.warn('Gemini form mapping failed, falling back to heuristic mapping:', error);
+          }
+        }
+        
         // Fill out the form fields with extracted data
         for (const field of fields) {
           const fieldName = field.getName();
-          const mappedDataKey = this.mapFieldNameToDataKey(fieldName, template);
+          let value: string | boolean | null = null;
           
-          if (mappedDataKey && enhancedData[mappedDataKey as keyof ExtractedData]) {
-            const value = String(enhancedData[mappedDataKey as keyof ExtractedData]);
-            
+          // Try AI mapping first, then fallback to heuristic mapping
+          if (aiMapping[fieldName] !== undefined) {
+            value = aiMapping[fieldName];
+          } else {
+            const mappedDataKey = this.mapFieldNameToDataKey(fieldName, template);
+            if (mappedDataKey && enhancedData[mappedDataKey as keyof ExtractedData]) {
+              value = String(enhancedData[mappedDataKey as keyof ExtractedData]);
+            }
+          }
+          
+          if (value !== null) {
             try {
               if (field.constructor.name === 'PDFTextField') {
-                (field as PDFTextField).setText(value);
+                (field as PDFTextField).setText(String(value));
                 fieldsProcessed++;
               } else if (field.constructor.name === 'PDFCheckBox') {
-                // Handle checkbox fields - check if value indicates true/yes
-                const shouldCheck = ['true', 'yes', '1', 'checked', 'x'].includes(value.toLowerCase());
+                // Handle checkbox fields
+                const shouldCheck = typeof value === 'boolean' ? value : ['true', 'yes', '1', 'checked', 'x'].includes(String(value).toLowerCase());
                 if (shouldCheck) {
                   (field as PDFCheckBox).check();
                 } else {
@@ -75,8 +99,8 @@ export class PDFProcessor {
                 // Handle radio button groups
                 const radioGroup = field as PDFRadioGroup;
                 const options = radioGroup.getOptions();
-                if (options.includes(value)) {
-                  radioGroup.select(value);
+                if (options.includes(String(value))) {
+                  radioGroup.select(String(value));
                   fieldsProcessed++;
                 }
               }
@@ -287,7 +311,8 @@ export class PDFProcessor {
     selectedTemplates: string[],
     extractedData: Partial<ExtractedData>,
     confidenceScores: Record<string, ConfidenceLevel>,
-    uploadedFiles: Record<string, File>
+    uploadedFiles: Record<string, File>,
+    contextText?: string
   ): Promise<CombinedPDFResult> {
     const combinedDoc = await PDFDocument.create();
     const documentsIncluded: string[] = [];
@@ -305,7 +330,7 @@ export class PDFProcessor {
     // Process each selected template
     for (const template of selectedTemplates) {
       try {
-        const result = await this.fillPDFTemplate(template, enhancedData, confidenceScores);
+        const result = await this.fillPDFTemplate(template, enhancedData, confidenceScores, contextText);
         
         // Load the generated PDF and copy its pages
         const templateDoc = await PDFDocument.load(result.pdfBytes);

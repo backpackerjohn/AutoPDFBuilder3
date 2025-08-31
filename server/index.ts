@@ -16,6 +16,9 @@ if (!process.env.PUBLIC_OBJECT_SEARCH_PATHS) {
 if (!process.env.PRIVATE_OBJECT_DIR) {
   console.warn('[WARN] PRIVATE_OBJECT_DIR is not set; combined downloads may fail.');
 }
+if (process.env.USE_GEMINI_FORM_FILL === '1' && !process.env.GEMINI_API_KEY) {
+  console.warn('[WARN] USE_GEMINI_FORM_FILL enabled but GEMINI_API_KEY missing; form filling will use fallback mapping.');
+}
 
 app.use((req, res, next) => {
   const start = Date.now();

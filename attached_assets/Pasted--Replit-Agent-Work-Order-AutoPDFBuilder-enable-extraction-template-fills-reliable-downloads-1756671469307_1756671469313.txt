@@ -1,0 +1,280 @@
+# Replit Agent — Work Order: AutoPDFBuilder (enable extraction + template fills + reliable downloads + Gemini form-fill)
+
+You are updating an existing Replit project named **AutoPDFBuilder**. Apply **both patch sets** and required edits so the flow is: user uploads images/text → selects templates → **Generate PDFs** → fields are auto-filled (via Gemini) → user receives **one combined PDF** (plus individual files) with **reliable downloads**.
+
+Report back with a concise diff summary and a green/red checklist of the acceptance criteria at the end.
+
+---
+
+## 0) Project context
+
+* The repo has a single root `package.json` at `AutoPDFBuilder/package.json`.
+* Client file to edit: `client/src/pages/home.tsx`
+* Server files to edit:
+
+  * `server/services/pdfProcessor.ts`
+  * `server/services/gemini.ts`
+  * `server/routes.ts`
+  * `server/objectStorage.ts`
+  * `server/index.ts`
+
+---
+
+## 1) Configure required Secrets and Object Storage
+
+### 1.1 — Add Secrets (Environment Variables)
+
+Create (or update) these secrets in Replit:
+
+```
+GEMINI_API_KEY=<PASTE VALID GOOGLE AI STUDIO API KEY>
+PUBLIC_OBJECT_SEARCH_PATHS=/deal-bucket/public
+PRIVATE_OBJECT_DIR=/deal-bucket/private/tmp
+USE_GEMINI_FORM_FILL=1              # enables Gemini-driven field mapping
+# Optional: GEMINI_MODEL=gemini-1.5-flash  # default is gemini-1.5-pro
+```
+
+### 1.2 — Prepare Object Storage paths
+
+In **Tools → Object Storage**:
+
+* Ensure a bucket path exists for `/deal-bucket/public/templates/`
+* Ensure a bucket path exists for `/deal-bucket/private/tmp/`
+* Upload your **fillable** PDF templates into:
+  `/deal-bucket/public/templates/<templateName>.pdf`
+  (e.g., `retail-installment-contract.pdf` → template id `retail-installment-contract`)
+
+**Verify:** Call `GET /api/templates` (via the app UI or HTTP) and confirm it returns your template names.
+
+If templates do **not** appear:
+
+* Re-check `PUBLIC_OBJECT_SEARCH_PATHS`
+* Re-check that files are under `…/public/templates/` and have `.pdf` extension
+
+---
+
+## 2) Apply patch set A — Reliable downloads + Always Combined PDF
+
+**Goal:** clicking **Download** or **Download All** always saves files; **Download All** returns one combined PDF even if no images were uploaded.
+
+### 2.1 — Client: robust downloads
+
+**Edit:** `client/src/pages/home.tsx`
+
+* Replace single-file download with `fetch → blob → <a download>` (no `window.location.href`).
+* Make **Download All** prefer the **combined** package if present; otherwise sequentially download each file with a small delay.
+
+**Target code (ensure it matches):**
+
+```tsx
+const handleDownloadDocument = async (document: GeneratedDocument) => {
+  try {
+    const res = await fetch(document.downloadUrl, { method: 'GET' });
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = document.fileName || 'document.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Download started', description: `Downloading ${document.fileName}` });
+  } catch (error: any) {
+    toast({ title: 'Download failed', description: error?.message || 'Failed to download document.', variant: 'destructive' });
+  }
+};
+
+const handleDownloadAll = async () => {
+  const combined = generatedDocuments.find(d => d.template === 'combined');
+  if (combined) return handleDownloadDocument(combined);
+  for (const doc of generatedDocuments) {
+    await handleDownloadDocument(doc);
+    await new Promise(r => setTimeout(r, 600));
+  }
+};
+```
+
+### 2.2 — Server: always generate the Combined Deal Package
+
+**Edit:** `server/routes.ts`
+
+* In the `/api/deals/:id/generate` route, **always** call `pdfProcessor.createCombinedPDF(...)` and store it in temp storage, setting `combinedDownloadUrl` regardless of whether images are present. Log errors but do not fail the request if combination fails.
+
+### 2.3 — Server: allow re-downloads before TTL
+
+**Edit:** `server/objectStorage.ts`
+
+* In `getTempPDF(downloadKey)`, **do not delete** the stored buffer on the first retrieval. Keep until TTL cleanup.
+
+---
+
+## 3) Apply patch set B — Gemini-driven form-field auto-fill
+
+**Goal:** Gemini maps actual PDF form field names to values using the merged extracted data (DL/VIN/Odometer/Insurance + chat context). We then fill those values first, falling back to the heuristic mapping.
+
+### 3.1 — Server: add mapping method
+
+**Edit:** `server/services/gemini.ts`
+
+* Add:
+
+```ts
+async mapFormFields(
+  templateName: string,
+  fieldNames: string[],
+  extractedData: any,
+  contextText?: string
+): Promise<Record<string, string | boolean>>
+```
+
+* Use `@google/genai` (default `gemini-1.5-pro`, JSON output) to return `{ [fieldName]: string | boolean }` with formatting rules: dates **MM/DD/YY**, phone `###-###-####`, booleans for checkboxes, omit unknowns.
+
+### 3.2 — Server: call Gemini during form fill
+
+**Edit:** `server/services/pdfProcessor.ts`
+
+* Inside `fillPDFTemplate(...)` after `const form = pdfDoc.getForm()`:
+
+  1. Collect field names via `const fieldNames = fields.map(f => f.getName())`.
+  2. **If** `USE_GEMINI_FORM_FILL=1` and `GEMINI_API_KEY` present:
+
+     * `const aiMap = await new GeminiService().mapFormFields(template, fieldNames, enhancedData, contextText)`
+  3. For each field, set value from `aiMap[fieldName]` **first**; if absent, use the existing `mapFieldNameToDataKey` fallback.
+  4. Support **text**, **checkbox**, and **radio group** fields.
+
+### 3.3 — Keep the heuristic mapping healthy
+
+**Edit:** `server/services/pdfProcessor.ts`
+
+* Confirm the mapping dictionary includes the lowercase key for License Number:
+
+```diff
+- 'licenseNumber': 'licenseNumber',
++ 'licensenumber': 'licenseNumber',
+```
+
+---
+
+## 4) Fix first-upload race + clearer upload errors (baseline stability)
+
+**Edit:** `client/src/pages/home.tsx`
+
+### 4.1 — Ensure deal is created before first upload
+
+```tsx
+const handleFileUpload = async (file: File, documentType: string) => {
+  let dealId = currentJobId;
+  if (!dealId) {
+    const job = await createDealMutation.mutateAsync(form.getValues());
+    dealId = job.id;
+    setCurrentJobId(dealId);
+  }
+  setUploadedFiles(prev => ({ ...prev, [documentType]: file }));
+  uploadFileMutation.mutate({ file, documentType, dealId });
+};
+```
+
+### 4.2 — Upload mutation accepts `dealId` and surfaces server errors
+
+```tsx
+const uploadFileMutation = useMutation({
+  mutationFn: async ({ file, documentType, dealId }: { file: File; documentType: string; dealId?: string }) => {
+    const id = dealId ?? currentJobId;
+    if (!id) throw new Error('No active deal');
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('documentType', documentType);
+    const res = await fetch(`/api/deals/${id}/upload`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      let message = 'Failed to process document.';
+      try { const j = await res.json(); if (j?.error) message = j.error; } catch {}
+      throw new Error(message);
+    }
+    return res.json();
+  },
+  onSuccess: (_result, { documentType }) => {
+    toast({ title: 'Document processed', description: `${documentType} uploaded and analyzed successfully.` });
+    queryClient.invalidateQueries({ queryKey: ['/api/deals', currentJobId] });
+  },
+  onError: (error: any, { documentType }) => {
+    setUploadedFiles(prev => { const { [documentType]: _, ...rest } = prev; return rest; });
+    toast({ title: 'Upload failed', description: error?.message || 'Failed to process document.', variant: 'destructive' });
+  },
+});
+```
+
+### 4.3 — Server warnings + clearer 503 on missing AI key
+
+**Edit:** `server/index.ts`
+
+```ts
+if (!process.env.GEMINI_API_KEY) console.warn('[WARN] GEMINI_API_KEY is not set; image/chat extraction will not work.');
+if (!process.env.PUBLIC_OBJECT_SEARCH_PATHS) console.warn('[WARN] PUBLIC_OBJECT_SEARCH_PATHS is not set; templates will not be found.');
+if (!process.env.PRIVATE_OBJECT_DIR) console.warn('[WARN] PRIVATE_OBJECT_DIR is not set; combined downloads may fail.');
+```
+
+**Edit:** `server/routes.ts` (upload route `catch`)
+
+```ts
+if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'AI extraction disabled: missing GEMINI_API_KEY' });
+console.error('Error processing upload:', error);
+return res.status(500).json({ error: (error as Error).message || 'Failed to process document' });
+```
+
+---
+
+## 5) Build & run, then perform a smoke test
+
+### 5.1 — Restart the repl
+
+(so new env vars take effect).
+
+### 5.2 — Verify templates list
+
+The app should show the templates loaded from `/api/templates`.
+
+### 5.3 — Test extraction and autofill (strict steps)
+
+1. Upload a **Driver’s License** image to the **Driver’s License** tile (not “Spot Registration”).
+   **Expect:** success toast; server stores `firstName`, `lastName`, `address`, `licenseNumber`, `licenseExpiration` with confidence scores.
+2. Upload VIN & Odometer images to their **matching** tiles (New Car VIN/Odometer or Trade-in VIN/Odometer).
+3. (Optional) Enter “Deal Information” free text; click **Generate**.
+
+   * If the yellow **Review Required** screen appears, click **Approve & Generate PDFs** to proceed.
+4. Click **Download All Documents**.
+
+   * A single **Combined Deal Package** downloads and opens with fields filled.
+   * Also test an individual **Download** button.
+5. Try a **second** download of the same file; it should still work (no immediate expiry).
+
+---
+
+## 6) Troubleshooting (only if something fails)
+
+* **Templates not filling:** server log shows “template not found in storage, creating basic document” → fix `PUBLIC_OBJECT_SEARCH_PATHS`, ensure file exists under `/…/public/templates/<id>.pdf` and the selected template id matches the filename (without `.pdf`).
+* **Extraction empty:** confirm `GEMINI_API_KEY` is set and valid; confirm images went to the correct tile (DL vs VIN/Odometer vs Insurance). “Spot Registration” is **upload-only**.
+* **“No active deal” reappears:** confirm the exact `handleFileUpload` + `uploadFileMutation` patches.
+* **Specific field blank:** add an alias in `mapFieldNameToDataKey(...)`; Gemini will also attempt mapping by raw field name.
+
+---
+
+## Acceptance criteria (agent must report pass/fail)
+
+* [ ] `GET /api/templates` returns the uploaded template names
+* [ ] First upload **never** shows “No active deal”
+* [ ] Uploading a DL image populates DL fields (`firstName`, `lastName`, `address`, `licenseNumber`, `licenseExpiration`)
+* [ ] **Generate PDFs** produces **fillable PDFs with fields populated**
+* [ ] **Download All Documents** returns **one combined PDF** (forms + images if any)
+* [ ] Individual **Download** saves the file; **re-download** also works
+* [ ] If `GEMINI_API_KEY` is missing, the upload route responds **503** with a clear message
+* [ ] Server logs warn when required env vars are missing
+
+**Report back** with:
+
+* A concise diff summary (files changed + lines)
+* The acceptance checklist with ✅/❌
+* If any checkbox is ❌, include the error message and the remediation you applied (or propose)
+
+**Use these exact steps. Do not omit any edits.**

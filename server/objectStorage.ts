@@ -69,11 +69,11 @@ export class ObjectStorageService {
     return downloadKey;
   }
 
-  // Retrieve and remove a temporary PDF
+  // Retrieve a temporary PDF (keep until TTL cleanup)
   getTempPDF(downloadKey: string): { buffer: Buffer; contentType: string; fileName: string } | null {
     const pdfData = this.tempPDFStorage.get(downloadKey);
     if (pdfData) {
-      this.tempPDFStorage.delete(downloadKey); // Remove after retrieval
+      // Do not delete on retrieval - keep until TTL cleanup
       return { 
         buffer: pdfData.buffer, 
         contentType: pdfData.contentType,

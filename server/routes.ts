@@ -347,7 +347,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const result = await pdfProcessor.fillPDFTemplate(
             template,
             finalData,
-            job.confidenceScores || {}
+            job.confidenceScores || {},
+            job.dealInformation
           );
           
           // Store PDF temporarily and create download URL
@@ -373,28 +374,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         generatedDocuments: generatedDocs.map(doc => doc.fileName)
       });
 
-      // Also generate combined PDF if there are uploaded files
+      // Always generate combined PDF
       let combinedDownloadUrl = null;
-      const uploadedFiles = dealFilesStorage.get(id);
+      const uploadedFiles = dealFilesStorage.get(id) || {};
       
-      if (uploadedFiles && Object.keys(uploadedFiles).length > 0) {
-        try {
-          const combinedResult = await pdfProcessor.createCombinedPDF(
-            validTemplates,
-            finalData,
-            job.confidenceScores || {},
-            uploadedFiles
-          );
-          
-          const combinedDownloadKey = objectStorageService.storeTempPDF(
-            combinedResult.fileName, 
-            Buffer.from(combinedResult.pdfBytes)
-          );
-          
-          combinedDownloadUrl = `/api/download/${combinedDownloadKey}`;
-        } catch (error) {
-          console.error("Error generating combined PDF:", error);
-        }
+      try {
+        const combinedResult = await pdfProcessor.createCombinedPDF(
+          validTemplates,
+          finalData,
+          job.confidenceScores || {},
+          uploadedFiles,
+          job.dealInformation
+        );
+        
+        const combinedDownloadKey = objectStorageService.storeTempPDF(
+          combinedResult.fileName, 
+          Buffer.from(combinedResult.pdfBytes)
+        );
+        
+        combinedDownloadUrl = `/api/download/${combinedDownloadKey}`;
+      } catch (error) {
+        console.error("Error generating combined PDF:", error);
+        // Log error but don't fail the request
       }
 
       res.json({
