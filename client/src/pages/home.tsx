@@ -93,25 +93,34 @@ export default function Home() {
 
   // Upload file mutation
   const uploadFileMutation = useMutation({
-    mutationFn: async ({ file, documentType }: { file: File; documentType: string }) => {
-      if (!currentJobId) throw new Error('No active deal');
-      
+    mutationFn: async ({
+      file,
+      documentType,
+      dealId,
+    }: { file: File; documentType: string; dealId?: string }) => {
+      const id = dealId ?? currentJobId;
+      if (!id) throw new Error('No active deal');
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('documentType', documentType);
-      
-      const response = await fetch(`/api/deals/${currentJobId}/upload`, {
+
+      const response = await fetch(`/api/deals/${id}/upload`, {
         method: 'POST',
         body: formData,
       });
-      
+
       if (!response.ok) {
-        throw new Error('Upload failed');
+        let message = 'Failed to process document.';
+        try {
+          const j = await response.json();
+          if (j?.error) message = j.error;
+        } catch {}
+        throw new Error(message);
       }
-      
       return response.json();
     },
-    onSuccess: (result, { documentType }) => {
+    onSuccess: (_result, { documentType }) => {
       toast({
         title: 'Document processed',
         description: `${documentType} uploaded and analyzed successfully.`,
@@ -119,17 +128,14 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ['/api/deals', currentJobId] });
     },
     onError: (error: any, { documentType }) => {
-      // Roll back optimistic UI state
+      // Roll back optimistic UI if upload failed
       setUploadedFiles(prev => {
         const { [documentType]: _, ...rest } = prev;
         return rest;
       });
-      
-      // Show specific error message if available
-      const errorMessage = error?.message || 'Failed to process document. Please try again.';
       toast({
         title: 'Upload failed',
-        description: errorMessage,
+        description: error?.message || 'Failed to process document. Please try again.',
         variant: 'destructive',
       });
     },
@@ -226,15 +232,19 @@ export default function Home() {
   });
 
   const handleFileUpload = async (file: File, documentType: string) => {
-    // Ensure we have an active deal
-    if (!currentJobId) {
-      const dealData = form.getValues();
-      await createDealMutation.mutateAsync(dealData);
+    // Ensure we have an active deal; use returned id immediately to avoid state race
+    let dealId = currentJobId;
+    if (!dealId) {
+      const job = await createDealMutation.mutateAsync(form.getValues());
+      dealId = job.id;
+      setCurrentJobId(dealId);
     }
 
-    // Only set optimistic UI state, will be rolled back on error
+    // Optimistic UI
     setUploadedFiles(prev => ({ ...prev, [documentType]: file }));
-    uploadFileMutation.mutate({ file, documentType });
+
+    // Pass the id explicitly to avoid using stale state
+    uploadFileMutation.mutate({ file, documentType, dealId });
   };
 
   const handleFileRemove = (documentType: string) => {

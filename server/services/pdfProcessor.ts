@@ -152,7 +152,7 @@ export class PDFProcessor {
       'address': 'address',
       'customeraddress': 'address',
       'buyeraddress': 'address',
-      'licenseNumber': 'licenseNumber',
+      'licensenumber': 'licenseNumber',
       'drivinglicensenumber': 'licenseNumber',
       'dllicense': 'licenseNumber',
       'licenseexpiration': 'licenseExpiration',

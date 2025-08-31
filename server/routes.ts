@@ -225,6 +225,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
     } catch (error) {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(503).json({ error: "AI extraction disabled: missing GEMINI_API_KEY" });
+      }
       console.error("Error processing upload:", error);
       
       // Handle Gemini API overload gracefully
@@ -259,7 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      res.status(500).json({ error: "Failed to process document" });
+      return res.status(500).json({ error: (error as Error).message || "Failed to process document" });
     }
   });
 

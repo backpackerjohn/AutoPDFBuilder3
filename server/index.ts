@@ -6,6 +6,17 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Sanity warnings for required environment variables
+if (!process.env.GEMINI_API_KEY) {
+  console.warn('[WARN] GEMINI_API_KEY is not set; image/chat extraction will not work.');
+}
+if (!process.env.PUBLIC_OBJECT_SEARCH_PATHS) {
+  console.warn('[WARN] PUBLIC_OBJECT_SEARCH_PATHS is not set; templates will not be found.');
+}
+if (!process.env.PRIVATE_OBJECT_DIR) {
+  console.warn('[WARN] PRIVATE_OBJECT_DIR is not set; combined downloads may fail.');
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
