@@ -34,7 +34,7 @@ export class ObjectNotFoundError extends Error {
 // The object storage service is used to interact with the object storage service.
 export class ObjectStorageService {
   // Store generated PDFs temporarily (in memory for downloads)
-  private tempPDFStorage: Map<string, { buffer: Buffer; contentType: string; createdAt: Date }> = new Map();
+  private tempPDFStorage: Map<string, { buffer: Buffer; contentType: string; fileName: string; createdAt: Date }> = new Map();
 
   constructor() {}
 
@@ -58,10 +58,11 @@ export class ObjectStorageService {
   storeTempPDF(fileName: string, pdfBuffer: Buffer): string {
     this.cleanupTempStorage(); // Clean up old files first
     
-    const downloadKey = `${Date.now()}_${fileName}`;
+    const downloadKey = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     this.tempPDFStorage.set(downloadKey, {
       buffer: pdfBuffer,
       contentType: 'application/pdf',
+      fileName: fileName,
       createdAt: new Date()
     });
     
@@ -69,11 +70,15 @@ export class ObjectStorageService {
   }
 
   // Retrieve and remove a temporary PDF
-  getTempPDF(downloadKey: string): { buffer: Buffer; contentType: string } | null {
+  getTempPDF(downloadKey: string): { buffer: Buffer; contentType: string; fileName: string } | null {
     const pdfData = this.tempPDFStorage.get(downloadKey);
     if (pdfData) {
       this.tempPDFStorage.delete(downloadKey); // Remove after retrieval
-      return { buffer: pdfData.buffer, contentType: pdfData.contentType };
+      return { 
+        buffer: pdfData.buffer, 
+        contentType: pdfData.contentType,
+        fileName: pdfData.fileName
+      };
     }
     return null;
   }

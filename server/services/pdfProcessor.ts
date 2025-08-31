@@ -198,9 +198,8 @@ export class PDFProcessor {
 
     for (const [documentType, file] of Object.entries(uploadedFiles)) {
       try {
-        // Read the image file
-        const arrayBuffer = await file.arrayBuffer();
-        const imageBytes = new Uint8Array(arrayBuffer);
+        // Read the image file from multer buffer
+        const imageBytes = new Uint8Array(file.buffer);
 
         let image;
         const mimeType = file.type.toLowerCase();
@@ -345,7 +344,7 @@ export class PDFProcessor {
   }
   
   private getTemplateTitle(template: string): string {
-    const titles: Record<PDFTemplate, string> = {
+    const titles: Record<string, string> = {
       'deal-check': 'Deal Check List',
       'delivery-receipt': 'Delivery Receipt',
       'we-owe': 'We Owe Form',
@@ -353,7 +352,7 @@ export class PDFProcessor {
       'bill-of-sale': 'Bill of Sale',
       'odometer-disclosure': 'Odometer Disclosure Statement'
     };
-    return titles[template];
+    return titles[template] || template.replace(/[^a-z0-9\s]/gi, ' ').replace(/\s+/g, ' ').trim();
   }
   
   private getFieldMappings(template: string): Record<string, string> {
@@ -403,7 +402,8 @@ export class PDFProcessor {
       ? `_${extractedData.firstName}_${extractedData.lastName}`
       : '';
     
-    const templateName = this.getTemplateTitle(template).replace(/\s+/g, '_');
+    const templateTitle = this.getTemplateTitle(template);
+    const templateName = templateTitle ? templateTitle.replace(/\s+/g, '_') : template.replace(/[^a-z0-9]/gi, '_');
     return `${templateName}${customerName}_${date}.pdf`;
   }
 }

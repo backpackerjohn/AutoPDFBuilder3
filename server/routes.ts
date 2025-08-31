@@ -446,8 +446,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.set({
         'Content-Type': pdfData.contentType,
-        'Content-Disposition': 'attachment; filename="document.pdf"',
+        'Content-Disposition': `attachment; filename="${pdfData.fileName}"`,
         'Content-Length': pdfData.buffer.length.toString(),
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
 
       res.send(pdfData.buffer);
