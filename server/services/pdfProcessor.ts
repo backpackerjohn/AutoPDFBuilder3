@@ -1,4 +1,4 @@
-import { PDFDocument, PDFForm, PDFTextField, PDFCheckBox, PDFRadioGroup } from 'pdf-lib';
+import { PDFDocument, PDFForm, PDFTextField, PDFCheckBox, PDFRadioGroup, rgb } from 'pdf-lib';
 import { ExtractedData, PDFTemplate, ConfidenceLevel } from '@shared/schema';
 import { objectStorageService } from '../objectStorage';
 
@@ -7,6 +7,13 @@ export interface PDFProcessingResult {
   pdfBytes: Uint8Array;
   fieldsProcessed: number;
   fieldsTotal: number;
+}
+
+export interface CombinedPDFResult {
+  fileName: string;
+  pdfBytes: Uint8Array;
+  documentsIncluded: string[];
+  imagesIncluded: string[];
 }
 
 export class PDFProcessor {
@@ -183,6 +190,158 @@ export class PDFProcessor {
     const day = String(date.getDate()).padStart(2, '0');
     const year = String(date.getFullYear()).slice(-2);
     return `${month}/${day}/${year}`;
+  }
+
+  // Convert uploaded images to PDF pages and add to document
+  private async addImagesToPDF(pdfDoc: PDFDocument, uploadedFiles: Record<string, File>): Promise<string[]> {
+    const addedImages: string[] = [];
+
+    for (const [documentType, file] of Object.entries(uploadedFiles)) {
+      try {
+        // Read the image file
+        const arrayBuffer = await file.arrayBuffer();
+        const imageBytes = new Uint8Array(arrayBuffer);
+
+        let image;
+        const mimeType = file.type.toLowerCase();
+
+        // Embed the image based on its type
+        if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
+          image = await pdfDoc.embedJpg(imageBytes);
+        } else if (mimeType.includes('png')) {
+          image = await pdfDoc.embedPng(imageBytes);
+        } else {
+          console.warn(`Unsupported image type for ${documentType}: ${mimeType}`);
+          continue;
+        }
+
+        // Create a new page for the image
+        const page = pdfDoc.addPage();
+        const { width: pageWidth, height: pageHeight } = page.getSize();
+
+        // Calculate scaling to fit image on page while maintaining aspect ratio
+        const imageAspectRatio = image.width / image.height;
+        const pageAspectRatio = pageWidth / pageHeight;
+
+        let scaledWidth, scaledHeight;
+        const margin = 50;
+
+        if (imageAspectRatio > pageAspectRatio) {
+          // Image is wider, scale by width
+          scaledWidth = pageWidth - (margin * 2);
+          scaledHeight = scaledWidth / imageAspectRatio;
+        } else {
+          // Image is taller, scale by height
+          scaledHeight = pageHeight - (margin * 2);
+          scaledWidth = scaledHeight * imageAspectRatio;
+        }
+
+        // Center the image on the page
+        const x = (pageWidth - scaledWidth) / 2;
+        const y = pageHeight - ((pageHeight - scaledHeight) / 2) - scaledHeight;
+
+        // Add title for the document type
+        const title = this.formatDocumentTypeTitle(documentType);
+        page.drawText(title, {
+          x: margin,
+          y: pageHeight - 30,
+          size: 16,
+          color: rgb(0, 0, 0),
+        });
+
+        // Draw the image
+        page.drawImage(image, {
+          x,
+          y,
+          width: scaledWidth,
+          height: scaledHeight,
+        });
+
+        addedImages.push(title);
+
+      } catch (error) {
+        console.error(`Error adding image ${documentType} to PDF:`, error);
+      }
+    }
+
+    return addedImages;
+  }
+
+  // Format document type for display
+  private formatDocumentTypeTitle(documentType: string): string {
+    const titles: Record<string, string> = {
+      'drivers-license': 'Driver\'s License',
+      'insurance-card': 'Insurance Card',
+      'new-car-vin': 'New Car VIN',
+      'new-car-odometer': 'New Car Odometer',
+      'trade-in-vin': 'Trade-in VIN',
+      'trade-in-odometer': 'Trade-in Odometer',
+      'spot-registration': 'Spot Registration',
+    };
+    return titles[documentType] || documentType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  // Create a combined PDF with all filled forms and uploaded images
+  async createCombinedPDF(
+    selectedTemplates: PDFTemplate[],
+    extractedData: Partial<ExtractedData>,
+    confidenceScores: Record<string, ConfidenceLevel>,
+    uploadedFiles: Record<string, File>
+  ): Promise<CombinedPDFResult> {
+    const combinedDoc = await PDFDocument.create();
+    const documentsIncluded: string[] = [];
+
+    // Add current date to extracted data
+    const currentDate = new Date();
+    const formattedDate = this.formatDateForPDF(currentDate);
+    const enhancedData = {
+      ...extractedData,
+      currentDate: formattedDate,
+      todaysDate: formattedDate,
+      date: formattedDate,
+    };
+
+    // Process each selected template
+    for (const template of selectedTemplates) {
+      try {
+        const result = await this.fillPDFTemplate(template, enhancedData, confidenceScores);
+        
+        // Load the generated PDF and copy its pages
+        const templateDoc = await PDFDocument.load(result.pdfBytes);
+        const pages = await combinedDoc.copyPages(templateDoc, templateDoc.getPageIndices());
+        
+        pages.forEach(page => combinedDoc.addPage(page));
+        documentsIncluded.push(this.getTemplateTitle(template));
+
+      } catch (error) {
+        console.error(`Error adding template ${template} to combined PDF:`, error);
+      }
+    }
+
+    // Add uploaded images as pages
+    const imagesIncluded = await this.addImagesToPDF(combinedDoc, uploadedFiles);
+
+    const pdfBytes = await combinedDoc.save();
+    const fileName = this.generateCombinedFileName(extractedData);
+
+    return {
+      fileName,
+      pdfBytes,
+      documentsIncluded,
+      imagesIncluded
+    };
+  }
+
+  // Generate filename for combined PDF
+  private generateCombinedFileName(extractedData: Partial<ExtractedData>): string {
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+    
+    const customerName = [extractedData.firstName, extractedData.lastName]
+      .filter(Boolean)
+      .join('_') || 'Customer';
+    
+    return `Deal_Package_${customerName}_${dateStr}.pdf`;
   }
   
   private getTemplateTitle(template: PDFTemplate): string {

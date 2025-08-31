@@ -25,6 +25,9 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Create deal files storage for uploaded images
+  const dealFilesStorage = new Map<string, Record<string, File>>();
+  
   // Get list of available PDF templates
   app.get("/api/templates", async (req, res) => {
     try {
@@ -191,6 +194,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           extractionResult = { data: {}, confidence: {} };
       }
 
+      // Store the uploaded file for later PDF generation
+      if (!dealFilesStorage.has(id)) {
+        dealFilesStorage.set(id, {});
+      }
+      const jobFiles = dealFilesStorage.get(id)!;
+      jobFiles[documentType] = req.file;
+
       // Update job with extracted data
       const updatedJob = await storage.updateDealProcessingJob(id, {
         uploadedFiles: {
@@ -321,9 +331,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         generatedDocuments: generatedDocs.map(doc => doc.fileName)
       });
 
+      // Also generate combined PDF if there are uploaded files
+      let combinedDownloadUrl = null;
+      const uploadedFiles = dealFilesStorage.get(id);
+      
+      if (uploadedFiles && Object.keys(uploadedFiles).length > 0) {
+        try {
+          const combinedResult = await pdfProcessor.createCombinedPDF(
+            validTemplates as PDFTemplate[],
+            finalData,
+            job.confidenceScores || {},
+            uploadedFiles
+          );
+          
+          const combinedDownloadKey = objectStorageService.storeTempPDF(
+            combinedResult.fileName, 
+            Buffer.from(combinedResult.pdfBytes)
+          );
+          
+          combinedDownloadUrl = `/api/download/${combinedDownloadKey}`;
+        } catch (error) {
+          console.error("Error generating combined PDF:", error);
+        }
+      }
+
       res.json({
         success: true,
         documents: generatedDocs,
+        combinedDownloadUrl,
         job: updatedJob
       });
 

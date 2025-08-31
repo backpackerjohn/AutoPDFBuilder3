@@ -17,7 +17,8 @@ import {
   Check,
   AlertTriangle,
   Loader2,
-  Bot
+  Bot,
+  Package
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -156,12 +157,29 @@ export default function Home() {
       return response.json();
     },
     onSuccess: (result) => {
-      setGeneratedDocuments(result.documents);
+      const documents = result.documents || [];
+      
+      // Add combined PDF to the top of the list if available
+      if (result.combinedDownloadUrl) {
+        const combinedDoc = {
+          template: 'combined',
+          fileName: 'Complete Deal Package',
+          downloadUrl: result.combinedDownloadUrl,
+          fieldsProcessed: documents.reduce((sum: number, doc: any) => sum + (doc.fieldsProcessed || 0), 0),
+          fieldsTotal: documents.reduce((sum: number, doc: any) => sum + (doc.fieldsTotal || 0), 0),
+        };
+        setGeneratedDocuments([combinedDoc, ...documents]);
+      } else {
+        setGeneratedDocuments(documents);
+      }
+      
       setShowReview(false);
       setProcessingStatus({ isProcessing: false, currentStep: '', progress: 100 });
       toast({
         title: 'Documents generated',
-        description: `${result.documents.length} documents are ready for download.`,
+        description: result.combinedDownloadUrl 
+          ? `Complete deal package with ${documents.length} form(s) + images ready for download.`
+          : `${documents.length} documents are ready for download.`,
       });
     },
     onError: () => {
@@ -766,13 +784,35 @@ export default function Home() {
 
                     <div className="space-y-2">
                       {generatedDocuments.map((doc, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                        <div key={index} className={`flex items-center justify-between p-3 border rounded-lg ${
+                          doc.template === 'combined' 
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' 
+                            : 'border-border'
+                        }`}>
                           <div className="flex items-center space-x-3">
-                            <FileText className="h-4 w-4 text-destructive" />
-                            <span className="text-sm font-medium text-foreground">{doc.fileName}</span>
+                            {doc.template === 'combined' ? (
+                              <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            ) : (
+                              <FileText className="h-4 w-4 text-destructive" />
+                            )}
+                            <div>
+                              <span className={`text-sm font-medium ${
+                                doc.template === 'combined' 
+                                  ? 'text-blue-800 dark:text-blue-200' 
+                                  : 'text-foreground'
+                              }`}>
+                                {doc.fileName}
+                              </span>
+                              {doc.template === 'combined' && (
+                                <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                                  All forms + uploaded images in one PDF
+                                </div>
+                              )}
+                            </div>
                           </div>
                           <Button
                             size="sm"
+                            variant={doc.template === 'combined' ? 'default' : 'outline'}
                             onClick={() => handleDownloadDocument(doc)}
                             data-testid={`download-${doc.template}`}
                           >
