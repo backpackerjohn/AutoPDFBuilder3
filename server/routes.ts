@@ -12,7 +12,7 @@ import { z } from "zod";
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25MB limit for modern photos
+    fileSize: 100 * 1024 * 1024, // 100MB limit - no practical restriction
   },
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = [
@@ -21,13 +21,19 @@ const upload = multer({
       'image/png',
       'image/webp',
       'image/heic',
-      'image/heif'
+      'image/heif',
+      'application/octet-stream' // HEIC files often come through as this
     ];
     
-    if (allowedMimeTypes.includes(file.mimetype.toLowerCase())) {
+    // Check MIME type OR file extension for HEIC/image files
+    const fileName = file.originalname?.toLowerCase() || '';
+    const isImageExtension = fileName.match(/\.(jpe?g|png|webp|heic|heif)$/i);
+    const isAllowedMimeType = allowedMimeTypes.includes(file.mimetype.toLowerCase());
+    
+    if (isAllowedMimeType || isImageExtension) {
       cb(null, true);
     } else {
-      cb(new Error(`Only image files are allowed. Got: ${file.mimetype}`));
+      cb(new Error(`Only image files (JPEG, JPG, PNG, WEBP, HEIC) are allowed. Got: ${file.mimetype}, filename: ${file.originalname}`));
     }
   },
 });
@@ -145,18 +151,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Convert image to base64
       const imageBase64 = req.file.buffer.toString('base64');
       
+      // Detect actual MIME type for proper Gemini processing
+      let actualMimeType = req.file.mimetype;
+      if (req.file.mimetype === 'application/octet-stream') {
+        const fileName = req.file.originalname?.toLowerCase() || '';
+        if (fileName.match(/\.heic$/i)) {
+          actualMimeType = 'image/heic';
+        } else if (fileName.match(/\.heif$/i)) {
+          actualMimeType = 'image/heif';
+        } else if (fileName.match(/\.jpe?g$/i)) {
+          actualMimeType = 'image/jpeg';
+        } else if (fileName.match(/\.png$/i)) {
+          actualMimeType = 'image/png';
+        } else if (fileName.match(/\.webp$/i)) {
+          actualMimeType = 'image/webp';
+        }
+      }
+      
       // Process with Gemini AI based on document type
       let extractionResult;
       
       switch (documentType as DocumentType) {
         case 'drivers-license':
-          extractionResult = await geminiService.extractFromDriversLicense(imageBase64, req.file.mimetype);
+          extractionResult = await geminiService.extractFromDriversLicense(imageBase64, actualMimeType);
           break;
         case 'insurance':
-          extractionResult = await geminiService.extractFromInsuranceCard(imageBase64, req.file.mimetype);
+          extractionResult = await geminiService.extractFromInsuranceCard(imageBase64, actualMimeType);
           break;
         case 'new-car-vin':
-          extractionResult = await geminiService.extractVinFromImage(imageBase64, req.file.mimetype);
+          extractionResult = await geminiService.extractVinFromImage(imageBase64, actualMimeType);
           // Map generic 'vin' to specific field
           if (extractionResult.data.vin) {
             extractionResult.data.newCarVin = extractionResult.data.vin;
@@ -166,7 +189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           break;
         case 'new-car-odometer':
-          extractionResult = await geminiService.extractOdometerReading(imageBase64, req.file.mimetype);
+          extractionResult = await geminiService.extractOdometerReading(imageBase64, actualMimeType);
           // Map generic 'odometer' to specific field
           if (extractionResult.data.odometer) {
             extractionResult.data.newCarOdometer = extractionResult.data.odometer;
@@ -176,7 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           break;
         case 'trade-in-vin':
-          extractionResult = await geminiService.extractVinFromImage(imageBase64, req.file.mimetype);
+          extractionResult = await geminiService.extractVinFromImage(imageBase64, actualMimeType);
           // Map generic 'vin' to specific field
           if (extractionResult.data.vin) {
             extractionResult.data.tradeInVin = extractionResult.data.vin;
@@ -186,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           break;
         case 'trade-in-odometer':
-          extractionResult = await geminiService.extractOdometerReading(imageBase64, req.file.mimetype);
+          extractionResult = await geminiService.extractOdometerReading(imageBase64, actualMimeType);
           // Map generic 'odometer' to specific field
           if (extractionResult.data.odometer) {
             extractionResult.data.tradeInOdometer = extractionResult.data.odometer;
