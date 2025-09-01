@@ -220,7 +220,15 @@ export class PDFProcessor {
   private async addImagesToPDF(pdfDoc: PDFDocument, uploadedFiles: Record<string, File>): Promise<string[]> {
     const addedImages: string[] = [];
 
-    for (const [documentType, file] of Object.entries(uploadedFiles)) {
+    // Only include specific document types in print copies
+    const allowedDocumentTypes = ['drivers-license', 'insurance', 'spot-registration'];
+    
+    // Filter uploaded files to only include allowed types
+    const filteredFiles = Object.entries(uploadedFiles).filter(([documentType]) => 
+      allowedDocumentTypes.includes(documentType)
+    );
+
+    for (const [documentType, file] of filteredFiles) {
       try {
         // Read the image file from multer buffer
         const imageBytes = new Uint8Array((file as any).buffer);

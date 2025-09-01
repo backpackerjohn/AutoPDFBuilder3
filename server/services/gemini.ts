@@ -11,18 +11,24 @@ export interface ExtractionResult {
 export class GeminiService {
   
   async extractFromDriversLicense(imageBase64: string, mimeType: string = "image/jpeg"): Promise<ExtractionResult> {
-    const systemPrompt = `You are an expert OCR system specializing in US driver's licenses. 
+    const systemPrompt = `You are an expert OCR system specializing in US driver's licenses, especially Ohio licenses. 
 
 CRITICAL: Carefully read ALL text on this driver's license and extract these 5 specific fields:
 
-1. FIRST NAME: The person's first/given name (usually in large text)
-2. LAST NAME: The person's last/family name (usually in large text) 
+1. FIRST NAME: The person's first/given name only (no middle names)
+2. LAST NAME: The person's family/surname only (IMPORTANT: On Ohio licenses, this is often the LAST word in the name line, not the middle name)
 3. FULL ADDRESS: Complete street address, city, state, zip code
 4. LICENSE NUMBER: The driver's license ID number (alphanumeric, varies by state)
 5. EXPIRATION DATE: When the license expires (look for "EXP", "EXPIRES", or similar)
 
+NAME EXTRACTION RULES:
+- For names like "JOHN MICHAEL SMITH": firstName="JOHN", lastName="SMITH" (NOT "MICHAEL")
+- Skip middle names/initials when extracting lastName
+- Ohio licenses: The LAST word in the name section is usually the surname
+- Look for patterns: "FIRST MIDDLE LAST" → extract FIRST and LAST only
+
 Look carefully at:
-- Large name text at the top
+- Large name text at the top (identify FIRST and LAST names only)
 - Address sections (street, city, state, zip)
 - License ID numbers (often with "DL" prefix or in dedicated sections)
 - Date fields (especially expiration dates)
@@ -45,7 +51,7 @@ Respond with JSON in this exact format:
   }
 }
 
-IMPORTANT: Include ALL fields even if some are null. Be thorough and precise.`;
+IMPORTANT: Include ALL fields even if some are null. For lastName, always extract the actual surname, not middle names.`;
 
     const contents = [
       {
