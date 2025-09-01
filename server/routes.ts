@@ -199,7 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dealFilesStorage.set(id, {});
       }
       const jobFiles = dealFilesStorage.get(id)!;
-      jobFiles[documentType] = req.file;
+      jobFiles[documentType] = req.file as any;
 
       // Update job with extracted data
       const updatedJob = await storage.updateDealProcessingJob(id, {
@@ -237,7 +237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           dealFilesStorage.set(req.params.id, {});
         }
         const jobFiles = dealFilesStorage.get(req.params.id)!;
-        jobFiles[req.body.documentType] = req.file!;
+        jobFiles[req.body.documentType] = req.file! as any;
         
         // Get the job first 
         const currentJob = await storage.getDealProcessingJob(req.params.id);
@@ -348,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             template,
             finalData,
             job.confidenceScores || {},
-            job.dealInformation
+            job.dealInformation || undefined
           );
           
           // Store PDF temporarily and create download URL
@@ -384,7 +384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           finalData,
           job.confidenceScores || {},
           uploadedFiles,
-          job.dealInformation
+          job.dealInformation || undefined
         );
         
         const combinedDownloadKey = objectStorageService.storeTempPDF(
@@ -460,6 +460,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error downloading document:", error);
       res.status(500).json({ error: "Failed to download document" });
     }
+  });
+
+  // Health endpoint to verify environment readiness and configuration
+  app.get("/api/health", async (req, res) => {
+    res.json({
+      ok: {
+        geminiKey: !!process.env.GEMINI_API_KEY,
+        publicPaths: !!process.env.PUBLIC_OBJECT_SEARCH_PATHS,
+        privateDir: !!process.env.PRIVATE_OBJECT_DIR,
+      },
+      now: new Date().toISOString(),
+    });
   });
 
   const httpServer = createServer(app);

@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
+import { downloadFile } from '../lib/download';
 import { FileUpload } from '@/components/file-upload';
 import { ConfidenceBadge } from '@/components/confidence-badge';
 import { TemplateUpload } from '@/components/template-upload';
@@ -337,22 +338,14 @@ export default function Home() {
 
 const handleDownloadDocument = async (doc: GeneratedDocument) => {
   try {
-    const res = await fetch(doc.downloadUrl, { method: 'GET' });
-    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-
-    const a = window.document.createElement('a');
-    a.href = url;
-    a.download = doc.fileName || 'document.pdf';
-    window.document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    toast({ title: 'Download started', description: `Downloading ${doc.fileName}` });
+    await downloadFile(doc.downloadUrl, doc.fileName || 'document.pdf');
+    toast({ title: 'Download started', description: `Downloading ${doc.fileName ?? 'document.pdf'}` });
   } catch (error: any) {
-    toast({ title: 'Download failed', description: error?.message || 'Failed to download document.', variant: 'destructive' });
+    toast({
+      title: 'Download failed',
+      description: error?.message || 'Failed to download document. Please try again.',
+      variant: 'destructive',
+    });
   }
 };
 

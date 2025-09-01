@@ -223,10 +223,10 @@ export class PDFProcessor {
     for (const [documentType, file] of Object.entries(uploadedFiles)) {
       try {
         // Read the image file from multer buffer
-        const imageBytes = new Uint8Array(file.buffer);
+        const imageBytes = new Uint8Array((file as any).buffer);
 
         let image;
-        const mimeType = (file.mimetype || file.type || '').toLowerCase();
+        const mimeType = ((file as any).mimetype || (file as any).type || '').toLowerCase();
 
         // Embed the image based on its type
         if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {

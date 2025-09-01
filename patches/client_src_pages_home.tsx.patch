@@ -1,0 +1,40 @@
+*** Begin Patch
+*** Update File: client/src/pages/home.tsx
+@@
+-import { useToast } from '@/hooks/use-toast';
++import { useToast } from '@/hooks/use-toast';
++import { downloadFile } from '../lib/download';
+@@
+-const handleDownloadDocument = async (doc: GeneratedDocument) => {
+-  try {
+-    const res = await fetch(doc.downloadUrl, { method: 'GET' });
+-    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+-    const blob = await res.blob();
+-    const url = URL.createObjectURL(blob);
+-
+-    const a = window.document.createElement('a');
+-    a.href = url;
+-    a.download = doc.fileName || 'document.pdf';
+-    window.document.body.appendChild(a);
+-    a.click();
+-    a.remove();
+-    URL.revokeObjectURL(url);
+-
+-    toast({ title: 'Download started', description: `Downloading ${doc.fileName}` });
+-  } catch (error: any) {
+-    toast({ title: 'Download failed', description: error?.message || 'Failed to download document.', variant: 'destructive' });
+-  }
+-};
++const handleDownloadDocument = async (doc: GeneratedDocument) => {
++  try {
++    await downloadFile(doc.downloadUrl, doc.fileName || 'document.pdf');
++    toast({ title: 'Download started', description: `Downloading ${doc.fileName ?? 'document.pdf'}` });
++  } catch (error: any) {
++    toast({
++      title: 'Download failed',
++      description: error?.message || 'Failed to download document. Please try again.',
++      variant: 'destructive',
++    });
++  }
++};
+*** End Patch

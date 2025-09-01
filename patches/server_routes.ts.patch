@@ -1,0 +1,20 @@
+*** Begin Patch
+*** Update File: server/routes.ts
+@@ registerRoutes(app: Express): Promise<Server> {
+   // Download generated PDF endpoint
+   app.get("/api/download/:downloadKey", async (req, res) => {
+@@
+   });
++
++  // Health endpoint to verify environment readiness and configuration
++  app.get("/api/health", async (req, res) => {
++    res.json({
++      ok: {
++        geminiKey: !!process.env.GEMINI_API_KEY,
++        publicPaths: !!process.env.PUBLIC_OBJECT_SEARCH_PATHS,
++        privateDir: !!process.env.PRIVATE_OBJECT_DIR,
++      },
++      now: new Date().toISOString(),
++    });
++  });
+*** End Patch
