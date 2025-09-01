@@ -10,7 +10,7 @@ export interface ExtractionResult {
 
 export class GeminiService {
   
-  async extractFromDriversLicense(imageBase64: string): Promise<ExtractionResult> {
+  async extractFromDriversLicense(imageBase64: string, mimeType: string = "image/jpeg"): Promise<ExtractionResult> {
     const systemPrompt = `You are an expert OCR system specializing in US driver's licenses. 
 
 CRITICAL: Carefully read ALL text on this driver's license and extract these 5 specific fields:
@@ -51,7 +51,7 @@ IMPORTANT: Include ALL fields even if some are null. Be thorough and precise.`;
       {
         inlineData: {
           data: imageBase64,
-          mimeType: "image/jpeg",
+          mimeType: mimeType,
         },
       },
       systemPrompt,
@@ -120,7 +120,7 @@ Respond with JSON: { "fieldName": "value" }`;
     }
   }
 
-  async extractFromInsuranceCard(imageBase64: string): Promise<ExtractionResult> {
+  async extractFromInsuranceCard(imageBase64: string, mimeType: string = "image/jpeg"): Promise<ExtractionResult> {
     const systemPrompt = `You are an expert at extracting information from insurance cards.
 Extract only the insurance company name. Ignore policy numbers, VINs, and other details.
 
@@ -138,7 +138,7 @@ Respond with JSON in this exact format:
       {
         inlineData: {
           data: imageBase64,
-          mimeType: "image/jpeg",
+          mimeType: mimeType,
         },
       },
       systemPrompt,
@@ -161,7 +161,7 @@ Respond with JSON in this exact format:
     return JSON.parse(rawJson) as ExtractionResult;
   }
 
-  async extractVinFromImage(imageBase64: string): Promise<ExtractionResult> {
+  async extractVinFromImage(imageBase64: string, mimeType: string = "image/jpeg"): Promise<ExtractionResult> {
     const systemPrompt = `You are an expert at reading Vehicle Identification Numbers (VINs) from images.
 Extract the 17-character alphanumeric VIN code. VINs are exactly 17 characters long.
 
@@ -179,7 +179,7 @@ Respond with JSON in this exact format:
       {
         inlineData: {
           data: imageBase64,
-          mimeType: "image/jpeg",
+          mimeType: mimeType,
         },
       },
       systemPrompt,
@@ -202,7 +202,7 @@ Respond with JSON in this exact format:
     return JSON.parse(rawJson) as ExtractionResult;
   }
 
-  async extractOdometerReading(imageBase64: string): Promise<ExtractionResult> {
+  async extractOdometerReading(imageBase64: string, mimeType: string = "image/jpeg"): Promise<ExtractionResult> {
     const systemPrompt = `You are an expert at reading odometer displays from vehicle dashboards.
 Extract the mileage reading from the odometer. Look for the main mileage number, ignore trip meters.
 
@@ -220,7 +220,7 @@ Respond with JSON in this exact format:
       {
         inlineData: {
           data: imageBase64,
-          mimeType: "image/jpeg",
+          mimeType: mimeType,
         },
       },
       systemPrompt,

@@ -15,10 +15,19 @@ const upload = multer({
     fileSize: 25 * 1024 * 1024, // 25MB limit for modern photos
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    const allowedMimeTypes = [
+      'image/jpeg',
+      'image/jpg', 
+      'image/png',
+      'image/webp',
+      'image/heic',
+      'image/heif'
+    ];
+    
+    if (allowedMimeTypes.includes(file.mimetype.toLowerCase())) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      cb(new Error(`Only image files are allowed. Got: ${file.mimetype}`));
     }
   },
 });
@@ -141,13 +150,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       switch (documentType as DocumentType) {
         case 'drivers-license':
-          extractionResult = await geminiService.extractFromDriversLicense(imageBase64);
+          extractionResult = await geminiService.extractFromDriversLicense(imageBase64, req.file.mimetype);
           break;
         case 'insurance':
-          extractionResult = await geminiService.extractFromInsuranceCard(imageBase64);
+          extractionResult = await geminiService.extractFromInsuranceCard(imageBase64, req.file.mimetype);
           break;
         case 'new-car-vin':
-          extractionResult = await geminiService.extractVinFromImage(imageBase64);
+          extractionResult = await geminiService.extractVinFromImage(imageBase64, req.file.mimetype);
           // Map generic 'vin' to specific field
           if (extractionResult.data.vin) {
             extractionResult.data.newCarVin = extractionResult.data.vin;
@@ -157,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           break;
         case 'new-car-odometer':
-          extractionResult = await geminiService.extractOdometerReading(imageBase64);
+          extractionResult = await geminiService.extractOdometerReading(imageBase64, req.file.mimetype);
           // Map generic 'odometer' to specific field
           if (extractionResult.data.odometer) {
             extractionResult.data.newCarOdometer = extractionResult.data.odometer;
@@ -167,7 +176,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           break;
         case 'trade-in-vin':
-          extractionResult = await geminiService.extractVinFromImage(imageBase64);
+          extractionResult = await geminiService.extractVinFromImage(imageBase64, req.file.mimetype);
           // Map generic 'vin' to specific field
           if (extractionResult.data.vin) {
             extractionResult.data.tradeInVin = extractionResult.data.vin;
@@ -177,7 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           break;
         case 'trade-in-odometer':
-          extractionResult = await geminiService.extractOdometerReading(imageBase64);
+          extractionResult = await geminiService.extractOdometerReading(imageBase64, req.file.mimetype);
           // Map generic 'odometer' to specific field
           if (extractionResult.data.odometer) {
             extractionResult.data.tradeInOdometer = extractionResult.data.odometer;
