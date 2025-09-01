@@ -11,22 +11,30 @@ export interface ExtractionResult {
 export class GeminiService {
   
   async extractFromDriversLicense(imageBase64: string): Promise<ExtractionResult> {
-    const systemPrompt = `You are an expert at extracting information from driver's licenses. 
-Extract the following information and provide confidence scores:
-- firstName (first name of license holder)
-- lastName (last name of license holder) 
-- address (full address from license)
-- licenseNumber (driver's license number)
-- licenseExpiration (expiration date)
+    const systemPrompt = `You are an expert OCR system specializing in US driver's licenses. 
+
+CRITICAL: Carefully read ALL text on this driver's license and extract these 5 specific fields:
+
+1. FIRST NAME: The person's first/given name (usually in large text)
+2. LAST NAME: The person's last/family name (usually in large text) 
+3. FULL ADDRESS: Complete street address, city, state, zip code
+4. LICENSE NUMBER: The driver's license ID number (alphanumeric, varies by state)
+5. EXPIRATION DATE: When the license expires (look for "EXP", "EXPIRES", or similar)
+
+Look carefully at:
+- Large name text at the top
+- Address sections (street, city, state, zip)
+- License ID numbers (often with "DL" prefix or in dedicated sections)
+- Date fields (especially expiration dates)
 
 Respond with JSON in this exact format:
 {
   "data": {
-    "firstName": "extracted_value_or_null",
-    "lastName": "extracted_value_or_null", 
-    "address": "extracted_value_or_null",
-    "licenseNumber": "extracted_value_or_null",
-    "licenseExpiration": "extracted_value_or_null"
+    "firstName": "extracted_first_name_or_null",
+    "lastName": "extracted_last_name_or_null", 
+    "address": "full_street_address_city_state_zip_or_null",
+    "licenseNumber": "license_id_number_or_null",
+    "licenseExpiration": "expiration_date_or_null"
   },
   "confidence": {
     "firstName": "high|medium|low",
@@ -37,7 +45,7 @@ Respond with JSON in this exact format:
   }
 }
 
-Only include fields where you can extract data. Use null for missing data.`;
+IMPORTANT: Include ALL fields even if some are null. Be thorough and precise.`;
 
     const contents = [
       {
@@ -50,7 +58,7 @@ Only include fields where you can extract data. Use null for missing data.`;
     ];
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -91,7 +99,7 @@ Rules:
 Respond with JSON: { "fieldName": "value" }`;
 
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-1.5-pro",
+      model: "gemini-1.5-flash",
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -137,7 +145,7 @@ Respond with JSON in this exact format:
     ];
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -178,7 +186,7 @@ Respond with JSON in this exact format:
     ];
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -219,7 +227,7 @@ Respond with JSON in this exact format:
     ];
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -256,7 +264,7 @@ Respond with JSON in this exact format:
 Only include fields where you can extract data. Use null for missing data.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
