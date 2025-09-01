@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { geminiService } from "./services/gemini";
 import { pdfProcessor } from "./services/pdfProcessor";
 import { objectStorageService } from "./objectStorage";
-import { insertDealProcessingJobSchema, DocumentType, PDFTemplate, ExtractedData, ConfidenceLevel } from "@shared/schema";
+import { insertDealProcessingJobSchema, insertVehicleSearchJobSchema, DocumentType, PDFTemplate, ExtractedData, ConfidenceLevel } from "@shared/schema";
 import { z } from "zod";
 
 // Configure multer for file uploads
@@ -491,6 +491,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error downloading document:", error);
       res.status(500).json({ error: "Failed to download document" });
+    }
+  });
+
+  // Vehicle search API routes
+  app.post("/api/vehicle-search", async (req, res) => {
+    try {
+      const validatedData = insertVehicleSearchJobSchema.parse(req.body);
+      const job = await storage.createVehicleSearchJob(validatedData);
+      res.json({ job });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid request data", details: error.errors });
+      }
+      console.error("Error creating vehicle search job:", error);
+      res.status(500).json({ error: "Failed to create vehicle search job" });
+    }
+  });
+
+  app.get("/api/vehicle-search/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const job = await storage.getVehicleSearchJob(id);
+      
+      if (!job) {
+        return res.status(404).json({ error: "Vehicle search job not found" });
+      }
+
+      res.json({ job });
+    } catch (error) {
+      console.error("Error getting vehicle search job:", error);
+      res.status(500).json({ error: "Failed to get vehicle search job" });
+    }
+  });
+
+  app.post("/api/vehicle-search/:id/search", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { websiteUrl } = req.body;
+      
+      const job = await storage.getVehicleSearchJob(id);
+      if (!job) {
+        return res.status(404).json({ error: "Vehicle search job not found" });
+      }
+
+      // Update status to processing
+      await storage.updateVehicleSearchJob(id, { status: 'processing' });
+
+      // Here we would normally fetch the website content
+      // For now, we'll use the mock data from the dealership website
+      const mockWebsiteContent = `
+        2025 Hyundai Venue Limited - $23,209 - 29/32 MPG - Stock: 5VU324
+        2025 Hyundai Elantra SEL Sport - $22,949 - 30/39 MPG - Stock: 5EL432
+        2025 Hyundai Santa Cruz XRT - $38,834 - 18/26 MPG - AWD - Stock: 5SC454
+        2025 Hyundai Elantra Hybrid SEL Sport - $26,449 - 49/52 MPG - Stock: 5EL483
+        2025 Hyundai Tucson Hybrid - AWD - Various trims available
+        2025 Hyundai Palisade - 3-row SUV - Various trims available
+        2025 Hyundai Ioniq 5 - Electric SUV - $7500 Federal Tax Credit
+        2025 Hyundai Ioniq 6 - Electric Sedan - Various trims available
+      `;
+
+      // Parse website inventory using AI
+      const vehicles = await geminiService.parseWebsiteInventory(mockWebsiteContent);
+
+      // Match vehicles to customer query using AI
+      const matchedVehicles = await geminiService.matchVehiclesToQuery(job.customerQuery, vehicles);
+
+      // Update job with results
+      const updatedJob = await storage.updateVehicleSearchJob(id, {
+        websiteData: { url: websiteUrl, content: mockWebsiteContent },
+        searchResults: matchedVehicles,
+        status: 'completed'
+      });
+
+      res.json({ 
+        success: true, 
+        searchResults: matchedVehicles,
+        job: updatedJob 
+      });
+
+    } catch (error) {
+      console.error("Error performing vehicle search:", error);
+      await storage.updateVehicleSearchJob(id, { status: 'failed' });
+      res.status(500).json({ error: "Failed to perform vehicle search" });
     }
   });
 

@@ -1,4 +1,4 @@
-import { type DealProcessingJob, type InsertDealProcessingJob } from "@shared/schema";
+import { type DealProcessingJob, type InsertDealProcessingJob, type VehicleSearchJob, type InsertVehicleSearchJob } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -6,13 +6,20 @@ export interface IStorage {
   getDealProcessingJob(id: string): Promise<DealProcessingJob | undefined>;
   updateDealProcessingJob(id: string, updates: Partial<DealProcessingJob>): Promise<DealProcessingJob | undefined>;
   deleteDealProcessingJob(id: string): Promise<boolean>;
+  
+  createVehicleSearchJob(job: InsertVehicleSearchJob): Promise<VehicleSearchJob>;
+  getVehicleSearchJob(id: string): Promise<VehicleSearchJob | undefined>;
+  updateVehicleSearchJob(id: string, updates: Partial<VehicleSearchJob>): Promise<VehicleSearchJob | undefined>;
+  deleteVehicleSearchJob(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
   private dealJobs: Map<string, DealProcessingJob>;
+  private vehicleSearchJobs: Map<string, VehicleSearchJob>;
 
   constructor() {
     this.dealJobs = new Map();
+    this.vehicleSearchJobs = new Map();
   }
 
   async createDealProcessingJob(insertJob: InsertDealProcessingJob): Promise<DealProcessingJob> {
@@ -48,6 +55,37 @@ export class MemStorage implements IStorage {
 
   async deleteDealProcessingJob(id: string): Promise<boolean> {
     return this.dealJobs.delete(id);
+  }
+
+  async createVehicleSearchJob(insertJob: InsertVehicleSearchJob): Promise<VehicleSearchJob> {
+    const id = randomUUID();
+    const job: VehicleSearchJob = {
+      id,
+      customerQuery: insertJob.customerQuery,
+      websiteData: insertJob.websiteData || {},
+      searchResults: (insertJob.searchResults as any[]) || [],
+      status: insertJob.status || 'pending',
+      createdAt: new Date(),
+    };
+    this.vehicleSearchJobs.set(id, job);
+    return job;
+  }
+
+  async getVehicleSearchJob(id: string): Promise<VehicleSearchJob | undefined> {
+    return this.vehicleSearchJobs.get(id);
+  }
+
+  async updateVehicleSearchJob(id: string, updates: Partial<VehicleSearchJob>): Promise<VehicleSearchJob | undefined> {
+    const existing = this.vehicleSearchJobs.get(id);
+    if (!existing) return undefined;
+    
+    const updated = { ...existing, ...updates };
+    this.vehicleSearchJobs.set(id, updated);
+    return updated;
+  }
+
+  async deleteVehicleSearchJob(id: string): Promise<boolean> {
+    return this.vehicleSearchJobs.delete(id);
   }
 }
 

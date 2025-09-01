@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { ExtractedData, ConfidenceLevel } from "@shared/schema";
+import { ExtractedData, ConfidenceLevel, VehicleSearchResult } from "@shared/schema";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
@@ -284,6 +284,130 @@ Only include fields where you can extract data. Use null for missing data.`;
     }
 
     return JSON.parse(rawJson) as ExtractionResult;
+  }
+
+  async parseWebsiteInventory(websiteContent: string): Promise<VehicleSearchResult[]> {
+    const systemPrompt = `You are an expert at extracting vehicle inventory information from dealership websites.
+
+Extract all available vehicles from this website content. For each vehicle, extract:
+- Year, make, model, trim
+- Price (numeric value only)
+- Mileage (if used vehicle)
+- Color/exterior color
+- Key features (array of strings)
+- Engine specifications
+- Transmission type
+- Drivetrain (FWD/AWD/4WD)
+- Image URL (if available)
+- Details page URL
+
+Respond with JSON array in this exact format:
+[
+  {
+    "id": "unique_identifier_from_vin_or_stock",
+    "year": "2025",
+    "make": "Hyundai",
+    "model": "Elantra",
+    "trim": "SEL Sport",
+    "price": 23209,
+    "mileage": 0,
+    "color": "Ecotronic Gray",
+    "features": ["Apple CarPlay", "Android Auto", "Backup Camera"],
+    "mpg": "30/39",
+    "engine": "4 Cyl - 2.0 L",
+    "transmission": "CVT",
+    "drivetrain": "FWD",
+    "imageUrl": "https://example.com/image.jpg",
+    "detailsUrl": "https://example.com/vehicle-details",
+    "matchScore": 0,
+    "matchReasons": []
+  }
+]
+
+Only include vehicles with clear pricing information. Skip any vehicles with missing essential data.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+      },
+      contents: websiteContent,
+    });
+
+    const rawJson = response.text;
+    if (!rawJson) {
+      return [];
+    }
+
+    try {
+      const vehicles = JSON.parse(rawJson);
+      return Array.isArray(vehicles) ? vehicles : [];
+    } catch (error) {
+      console.error("Failed to parse vehicle inventory:", error);
+      return [];
+    }
+  }
+
+  async matchVehiclesToQuery(customerQuery: string, vehicles: VehicleSearchResult[]): Promise<VehicleSearchResult[]> {
+    const systemPrompt = `You are an expert automotive sales assistant. A customer is looking for a vehicle with these requirements:
+
+"${customerQuery}"
+
+Analyze each vehicle in the inventory and:
+1. Assign a match score from 0-100 based on how well it fits their needs
+2. Provide specific reasons why it matches or doesn't match
+3. Consider factors like: price range, fuel efficiency, features, size, style preferences
+
+Available vehicles:
+${JSON.stringify(vehicles, null, 2)}
+
+Respond with the same JSON array but with updated matchScore and matchReasons for each vehicle:
+[
+  {
+    "id": "vehicle_id",
+    "year": "2025",
+    "make": "Hyundai",
+    "model": "Elantra",
+    "trim": "SEL Sport",
+    "price": 23209,
+    "mileage": 0,
+    "color": "Ecotronic Gray",
+    "features": ["Apple CarPlay", "Android Auto"],
+    "mpg": "30/39",
+    "engine": "4 Cyl - 2.0 L",
+    "transmission": "CVT",
+    "drivetrain": "FWD",
+    "imageUrl": "https://example.com/image.jpg",
+    "detailsUrl": "https://example.com/vehicle-details",
+    "matchScore": 85,
+    "matchReasons": ["Excellent fuel economy matches efficiency needs", "Affordable price point", "Modern tech features"]
+  }
+]
+
+Sort by matchScore descending (best matches first).`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
+      },
+      contents: systemPrompt,
+    });
+
+    const rawJson = response.text;
+    if (!rawJson) {
+      return vehicles;
+    }
+
+    try {
+      const matchedVehicles = JSON.parse(rawJson);
+      return Array.isArray(matchedVehicles) ? matchedVehicles : vehicles;
+    } catch (error) {
+      console.error("Failed to parse vehicle matches:", error);
+      return vehicles;
+    }
   }
 }
 
