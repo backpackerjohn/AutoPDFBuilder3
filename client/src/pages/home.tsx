@@ -305,7 +305,10 @@ export default function Home() {
         description,
         dealInformation: form.getValues('dealInformation'),
         selectedTemplates: form.getValues('selectedTemplates'),
-        uploadedAssets: Object.keys(uploadedFiles),
+        // SMART FILE BRIDGE: Extract persistent URLs from uploaded files
+        uploadedAssets: Object.entries(uploadedFiles)
+          .map(([docType, file]) => (file as any)?.persistentUrl)
+          .filter(Boolean), // Remove any null/undefined URLs
         stockLookupResult,
         extractedData: reviewData?.extractedData || {},
         confidenceScores: reviewData?.confidenceScores || {},
