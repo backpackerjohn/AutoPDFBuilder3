@@ -209,7 +209,31 @@ export default function Home() {
       }
       return response.json();
     },
-    onSuccess: (_result, { documentType }) => {
+    onSuccess: (result, { documentType }) => {
+      console.log('🔍 CLIENT DEBUG - Upload success result:', result);
+      
+      // SMART FILE BRIDGE: Update uploadedFiles state with persistent data from server
+      if (result?.fileMetadata) {
+        console.log('🔍 CLIENT DEBUG - Server returned fileMetadata:', result.fileMetadata);
+        
+        // Create file object with persistent properties for UI
+        const fileWithPersistentData = {
+          name: result.fileMetadata.originalname || `${documentType}_uploaded.jpg`,
+          size: result.fileMetadata.size || 0,
+          type: result.fileMetadata.mimetype || 'application/octet-stream',
+          lastModified: Date.now(),
+          persistentUrl: result.fileMetadata.persistentUrl,
+          uploadedAt: result.fileMetadata.uploadedAt,
+          isPersistent: result.fileMetadata.isPersistent
+        };
+        
+        setUploadedFiles(prev => ({
+          ...prev,
+          [documentType]: fileWithPersistentData
+        }));
+        console.log('🔍 CLIENT DEBUG - Updated uploadedFiles with actual persistent data:', fileWithPersistentData);
+      }
+      
       toast({
         title: 'File uploaded',
         description: `${documentType} uploaded successfully.`,

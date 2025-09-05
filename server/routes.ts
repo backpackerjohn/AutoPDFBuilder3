@@ -292,7 +292,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true,
         extractedData: extractionResult.data,
         confidence: extractionResult.confidence,
-        job: updatedJob
+        job: updatedJob,
+        // SMART FILE BRIDGE: Include persistent URL in response for client
+        persistentUrl: fileWithPersistentData.persistentUrl || null,
+        fileMetadata: {
+          originalname: fileWithPersistentData.originalname,
+          size: fileWithPersistentData.size,
+          mimetype: fileWithPersistentData.mimetype,
+          persistentUrl: fileWithPersistentData.persistentUrl,
+          uploadedAt: fileWithPersistentData.uploadedAt,
+          isPersistent: !!fileWithPersistentData.persistentUrl
+        }
       });
 
     } catch (error) {
