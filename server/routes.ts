@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { randomUUID } from "crypto";
 import multer from "multer";
 import { storage } from "./storage";
 import { geminiService } from "./services/gemini";
@@ -707,37 +708,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      // Get the deal to verify it exists
+      // Fetch the persistent deal to verify it exists
       const deal = await storage.getPersistentDeal(id);
       if (!deal) {
         return res.status(404).json({ error: "Persistent deal not found" });
       }
 
-      // Generate unique file name with timestamp
-      const fileName = `${Date.now()}-${req.file.originalname}`;
+      // Generate unique filename using Date.now() and randomUUID()
+      const fileName = `${Date.now()}-${randomUUID()}-${req.file.originalname}`;
       
       // Upload file to object storage
-      const objectPath = await objectStorageService.uploadDealFile(
+      await objectStorageService.uploadDealFile(
         id,
         fileName,
         req.file.buffer,
         req.file.mimetype
       );
 
-      // Update the deal with the new asset reference
-      const updatedAssets = [...(deal.uploadedAssets || []), fileName];
+      // Generate signed URL for the uploaded file
+      const downloadUrl = await objectStorageService.generateDealFileDownloadURL(id, fileName);
+      
+      if (!downloadUrl) {
+        return res.status(500).json({ error: "Failed to generate download URL for uploaded file" });
+      }
+
+      // Update the deal's uploadedAssets array with the signed URL
+      const updatedAssets = [...(deal.uploadedAssets || []), downloadUrl];
       const updatedDeal = await storage.updatePersistentDeal(id, {
         uploadedAssets: updatedAssets
       });
 
-      // Generate download URL for immediate access
-      const downloadURL = await objectStorageService.generateDealFileDownloadURL(id, fileName);
-
       res.json({ 
         success: true,
         fileName,
-        objectPath,
-        downloadURL,
+        downloadUrl,
         deal: updatedDeal
       });
 

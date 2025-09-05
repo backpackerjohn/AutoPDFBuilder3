@@ -1,0 +1,49 @@
+Prompt 3: Update Deal-Load Logic to Populate File List
+“In client/src/pages/home.tsx, locate the logic that handles loading a persistent deal. After loadPersistentDealMutation onSuccess:
+
+Read deal.uploadedAssets (an array of signed URLs).
+
+Store it in the component state uploadedAssets.
+
+Render those URLs as images:
+
+jsx
+{uploadedAssets.map(url => (
+  <img key={url} src={url} className="h-24 w-24 object-cover rounded-md" />
+))}
+Remove any code that resets images via an empty dealFilesStorage reference.”
+
+Prompt 4: Add Upload-In-Progress Feedback
+“In the same upload handler UI, wrap the file-upload button in toast notifications:
+
+Before upload, show “Uploading file…” toast.
+
+On success, show “File uploaded” toast.
+
+On error, show “Upload failed. Retry?” toast.
+Use the existing useToast() hook.”
+
+Prompt 5: Implement Cleanup for Partial Failures
+“In server/routes.ts upload handler, after uploading to object storage but before updating the deal record, wrap the DB update in try/catch:
+
+If the DB update fails, call objectStorageService.deleteDealFile(dealId, fileName) to remove the orphaned object.
+
+Then rethrow the error so the client sees failure.
+Ensure this prevents orphaned files when the deal update fails.”
+
+Prompt 6: Increase Signed URL TTL and Cache Busting
+“In server/objectStorage.ts, for generateDealFileDownloadURL, set ttlSec to at least 86400 (24 hours). Additionally, when returning the URL to the client, append ?v=${Date.now()} to bust any browser cache.”
+
+Prompt 7: Testing & Verification
+“After implementation:
+
+Restart the Replit server to apply changes.
+
+On device A, upload a file to a new deal and save.
+
+Confirm the returned downloadUrl points to an object-storage URL and loads an image.
+
+On device B, load the saved deal and verify the image appears.
+
+Test error scenarios: invalid deal ID, upload network failure, and signed URL expiration (simulate by reducing TTL).
+Report any failures or unexpected behaviors.”
