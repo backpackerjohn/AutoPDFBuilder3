@@ -572,7 +572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       console.error("Error performing vehicle search:", error);
-      await storage.updateVehicleSearchJob(id, { status: 'failed' });
+      await storage.updateVehicleSearchJob(req.params.id, { status: 'failed' });
       res.status(500).json({ error: "Failed to perform vehicle search" });
     }
   });
