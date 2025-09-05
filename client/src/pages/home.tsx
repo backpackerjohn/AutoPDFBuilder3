@@ -300,19 +300,36 @@ export default function Home() {
     mutationFn: async ({ name, description }: { name: string; description?: string }) => {
       if (!currentJobId) throw new Error('No active deal to save');
       
+      // DEBUG: Log uploadedFiles to understand data structure
+      console.log('🔍 DEBUG - uploadedFiles:', uploadedFiles);
+      
+      // SMART FILE BRIDGE: Extract persistent URLs from uploaded files
+      const fileEntries = Object.entries(uploadedFiles);
+      console.log('🔍 DEBUG - fileEntries:', fileEntries);
+      
+      const mappedUrls = fileEntries.map(([docType, file]) => {
+        const persistentUrl = (file as any)?.persistentUrl;
+        console.log(`🔍 DEBUG - ${docType}:`, { file, persistentUrl });
+        return persistentUrl;
+      });
+      console.log('🔍 DEBUG - mappedUrls:', mappedUrls);
+      
+      const filteredUrls = mappedUrls.filter(Boolean);
+      console.log('🔍 DEBUG - filteredUrls (final uploadedAssets):', filteredUrls);
+      console.log('🔍 DEBUG - filteredUrls type:', Array.isArray(filteredUrls), typeof filteredUrls);
+
       const dealData = {
         name,
         description,
         dealInformation: form.getValues('dealInformation'),
         selectedTemplates: form.getValues('selectedTemplates'),
-        // SMART FILE BRIDGE: Extract persistent URLs from uploaded files
-        uploadedAssets: Object.entries(uploadedFiles)
-          .map(([docType, file]) => (file as any)?.persistentUrl)
-          .filter(Boolean), // Remove any null/undefined URLs
+        uploadedAssets: filteredUrls,
         stockLookupResult,
         extractedData: reviewData?.extractedData || {},
         confidenceScores: reviewData?.confidenceScores || {},
       };
+      
+      console.log('🔍 DEBUG - Final dealData being sent:', dealData);
 
       const response = await apiRequest('POST', '/api/persistent-deals', dealData);
       return response.json();

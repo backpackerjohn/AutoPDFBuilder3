@@ -231,9 +231,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // SMART FILE BRIDGE: Store file persistently while maintaining existing functionality
       let fileWithPersistentData = req.file as any;
       
+      console.log('🔍 UPLOAD DEBUG - Starting Smart File Bridge for document:', documentType);
+      
       try {
         // Generate unique filename for persistent storage
         const persistentFileName = `${Date.now()}-${Math.random().toString(36).substring(2,8)}-${req.file.originalname}`;
+        console.log('🔍 UPLOAD DEBUG - Generated persistent filename:', persistentFileName);
         
         // Store in object storage for persistence
         await objectStorageService.uploadDealFile(
@@ -242,9 +245,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           req.file.buffer,
           actualMimeType
         );
+        console.log('🔍 UPLOAD DEBUG - Successfully uploaded to object storage');
         
         // Generate signed URL for persistent access
         const persistentUrl = await objectStorageService.generateDealFileDownloadURL(id, persistentFileName);
+        console.log('🔍 UPLOAD DEBUG - Generated persistent URL:', persistentUrl);
         
         // Store the persistent URL in the uploaded file metadata
         fileWithPersistentData = {
@@ -253,9 +258,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           persistentUrl,
           uploadedAt: new Date().toISOString()
         };
+        console.log('🔍 UPLOAD DEBUG - Created fileWithPersistentData:', fileWithPersistentData);
         
       } catch (error) {
-        console.warn('Persistent storage failed, continuing with memory storage:', error);
+        console.warn('🔍 UPLOAD DEBUG - Persistent storage failed, continuing with memory storage:', error);
         // Continue with regular flow even if persistent storage fails
       }
 
@@ -665,11 +671,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new persistent deal
   app.post("/api/persistent-deals", async (req, res) => {
     try {
+      // DEBUG: Log received data structure
+      console.log('🔍 SERVER DEBUG - Received req.body:', req.body);
+      console.log('🔍 SERVER DEBUG - req.body.uploadedAssets:', req.body.uploadedAssets);
+      console.log('🔍 SERVER DEBUG - uploadedAssets type:', Array.isArray(req.body.uploadedAssets), typeof req.body.uploadedAssets);
+      
+      // Validate input data
+      console.log('🔍 SERVER DEBUG - About to validate with insertPersistentDealSchema...');
       const validatedData = insertPersistentDealSchema.parse(req.body);
+      console.log('🔍 SERVER DEBUG - Validation successful:', validatedData);
+      
       const deal = await storage.createPersistentDeal(validatedData);
       res.json({ deal });
     } catch (error) {
+      console.log('🔍 SERVER DEBUG - Error occurred:', error);
       if (error instanceof z.ZodError) {
+        console.log('🔍 SERVER DEBUG - Zod validation error details:', error.errors);
         return res.status(400).json({ error: "Invalid request data", details: error.errors });
       }
       console.error("Error creating persistent deal:", error);
