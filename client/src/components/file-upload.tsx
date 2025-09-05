@@ -46,11 +46,35 @@ export function FileUpload({
         <div className="border-2 border-border rounded-lg p-4 bg-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <File className="h-8 w-8 text-primary" />
+              {/* SMART FILE BRIDGE: Display both current session and persistent files */}
+              {(uploadedFile as any)?.isPersistent ? (
+                // Display persistent file
+                <img 
+                  src={(uploadedFile as any).url} 
+                  alt="Uploaded file"
+                  className="h-16 w-16 object-cover rounded"
+                  onError={(e) => {
+                    console.log('Failed to load persistent image:', (uploadedFile as any).url);
+                  }}
+                />
+              ) : (
+                // Display current session file (existing logic)
+                <img 
+                  src={URL.createObjectURL(uploadedFile as File)} 
+                  alt="Uploaded file"
+                  className="h-16 w-16 object-cover rounded"
+                />
+              )}
               <div>
-                <p className="text-sm font-medium text-foreground">{uploadedFile.name}</p>
+                <p className="text-sm font-medium text-foreground">
+                  {(uploadedFile as any)?.displayName || (uploadedFile as File)?.name || documentType}
+                  {(uploadedFile as any)?.isPersistent && <span className="text-green-600 ml-1">✓ Saved</span>}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+                  {(uploadedFile as any)?.isPersistent 
+                    ? 'Saved to cloud storage'
+                    : `${((uploadedFile as File).size / 1024 / 1024).toFixed(2)} MB`
+                  }
                 </p>
               </div>
             </div>
