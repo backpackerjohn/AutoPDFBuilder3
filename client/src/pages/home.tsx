@@ -344,7 +344,6 @@ export default function Home() {
     onSuccess: (deal) => {
       // Reset current state
       setCurrentJobId(null);
-      setUploadedFiles({});
       setProcessingStatus({ isProcessing: false, currentStep: '', progress: 0 });
       setShowReview(false);
       setReviewFields([]);
@@ -359,6 +358,24 @@ export default function Home() {
       if (deal.stockLookupResult) {
         setStockLookupResult(deal.stockLookupResult);
         setStockNumber(deal.stockLookupResult.stockNumber || '');
+      }
+
+      // SMART FILE BRIDGE: Display uploaded assets from persistent storage
+      if (deal.uploadedAssets && deal.uploadedAssets.length > 0) {
+        // Create a display object for uploaded files
+        const persistentFiles = deal.uploadedAssets.reduce((acc: any, url: string, index: number) => {
+          acc[`persistent-${index}`] = {
+            url,
+            displayName: `Uploaded File ${index + 1}`,
+            isPersistent: true
+          };
+          return acc;
+        }, {} as any);
+        
+        // Set the uploaded files state to show persistent files
+        setUploadedFiles(persistentFiles);
+      } else {
+        setUploadedFiles({});
       }
 
       // Store uploaded assets (array of signed URLs)
