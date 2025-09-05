@@ -150,10 +150,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Deal not found" });
       }
 
-      // Convert image to base64
-      const imageBase64 = req.file.buffer.toString('base64');
+      // SMART FILE BRIDGE: Store file persistently FIRST (before AI processing)
+      let fileWithPersistentData = req.file as any;
       
-      // Detect actual MIME type for proper Gemini processing
+      // Detect actual MIME type for proper processing
       let actualMimeType = req.file.mimetype;
       if (req.file.mimetype === 'application/octet-stream') {
         const fileName = req.file.originalname?.toLowerCase() || '';
@@ -169,6 +169,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
           actualMimeType = 'image/webp';
         }
       }
+      
+      console.log('🔍 UPLOAD DEBUG - Starting Smart File Bridge for document:', documentType);
+      
+      try {
+        // Generate unique filename for persistent storage
+        const persistentFileName = `${Date.now()}-${Math.random().toString(36).substring(2,8)}-${req.file.originalname}`;
+        console.log('🔍 UPLOAD DEBUG - Generated persistent filename:', persistentFileName);
+        
+        // Store in object storage for persistence
+        await objectStorageService.uploadDealFile(
+          id, // use same deal ID
+          persistentFileName,
+          req.file.buffer,
+          actualMimeType
+        );
+        console.log('🔍 UPLOAD DEBUG - Successfully uploaded to object storage');
+        
+        // Generate signed URL for persistent access
+        const persistentUrl = await objectStorageService.generateDealFileDownloadURL(id, persistentFileName);
+        console.log('🔍 UPLOAD DEBUG - Generated persistent URL:', persistentUrl);
+        
+        // Store the persistent URL in the uploaded file metadata
+        fileWithPersistentData = {
+          ...req.file,
+          persistentFileName,
+          persistentUrl,
+          uploadedAt: new Date().toISOString()
+        };
+        console.log('🔍 UPLOAD DEBUG - Created fileWithPersistentData:', fileWithPersistentData);
+        
+      } catch (error) {
+        console.warn('🔍 UPLOAD DEBUG - Persistent storage failed, continuing with memory storage:', error);
+        // Continue with regular flow even if persistent storage fails
+      }
+
+      // Convert image to base64 for AI processing
+      const imageBase64 = req.file.buffer.toString('base64');
       
       // Process with Gemini AI based on document type
       let extractionResult;
@@ -226,43 +263,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
         default:
           extractionResult = { data: {}, confidence: {} };
-      }
-
-      // SMART FILE BRIDGE: Store file persistently while maintaining existing functionality
-      let fileWithPersistentData = req.file as any;
-      
-      console.log('🔍 UPLOAD DEBUG - Starting Smart File Bridge for document:', documentType);
-      
-      try {
-        // Generate unique filename for persistent storage
-        const persistentFileName = `${Date.now()}-${Math.random().toString(36).substring(2,8)}-${req.file.originalname}`;
-        console.log('🔍 UPLOAD DEBUG - Generated persistent filename:', persistentFileName);
-        
-        // Store in object storage for persistence
-        await objectStorageService.uploadDealFile(
-          id, // use same deal ID
-          persistentFileName,
-          req.file.buffer,
-          actualMimeType
-        );
-        console.log('🔍 UPLOAD DEBUG - Successfully uploaded to object storage');
-        
-        // Generate signed URL for persistent access
-        const persistentUrl = await objectStorageService.generateDealFileDownloadURL(id, persistentFileName);
-        console.log('🔍 UPLOAD DEBUG - Generated persistent URL:', persistentUrl);
-        
-        // Store the persistent URL in the uploaded file metadata
-        fileWithPersistentData = {
-          ...req.file,
-          persistentFileName,
-          persistentUrl,
-          uploadedAt: new Date().toISOString()
-        };
-        console.log('🔍 UPLOAD DEBUG - Created fileWithPersistentData:', fileWithPersistentData);
-        
-      } catch (error) {
-        console.warn('🔍 UPLOAD DEBUG - Persistent storage failed, continuing with memory storage:', error);
-        // Continue with regular flow even if persistent storage fails
       }
 
       // Store the uploaded file for later PDF generation
