@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { geminiService } from "./services/gemini";
 import { pdfProcessor } from "./services/pdfProcessor";
 import { objectStorageService } from "./objectStorage";
+import { inventoryService } from "./services/inventoryService";
 import { insertDealProcessingJobSchema, insertVehicleSearchJobSchema, DocumentType, PDFTemplate, ExtractedData, ConfidenceLevel } from "@shared/schema";
 import { z } from "zod";
 
@@ -491,6 +492,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error downloading document:", error);
       res.status(500).json({ error: "Failed to download document" });
+    }
+  });
+
+  // Inventory stock lookup endpoint
+  app.get("/api/inventory/:stockNumber", async (req, res) => {
+    try {
+      const { stockNumber } = req.params;
+      
+      if (!stockNumber || typeof stockNumber !== 'string') {
+        return res.status(400).json({ error: "Stock number is required" });
+      }
+
+      // Trim whitespace and convert to uppercase for consistent lookup
+      const cleanStockNumber = stockNumber.trim().toUpperCase();
+      
+      // Look up vehicle in inventory
+      const vehicle = inventoryService.lookupByStock(cleanStockNumber);
+      
+      if (!vehicle) {
+        return res.status(404).json({ 
+          error: "Vehicle not found",
+          stockNumber: cleanStockNumber 
+        });
+      }
+
+      // Return vehicle data in expected format
+      res.json({
+        stockNumber: vehicle.stockNumber,
+        vin: vehicle.vin,
+        year: vehicle.year,
+        make: vehicle.make,
+        model: vehicle.model,
+        trim: vehicle.trim,
+        color: vehicle.color
+      });
+
+    } catch (error) {
+      console.error("Error looking up inventory:", error);
+      res.status(500).json({ error: "Failed to lookup vehicle inventory" });
+    }
+  });
+
+  // Get inventory statistics
+  app.get("/api/inventory/stats", async (req, res) => {
+    try {
+      const stats = inventoryService.getInventoryStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error getting inventory stats:", error);
+      res.status(500).json({ error: "Failed to get inventory statistics" });
     }
   });
 

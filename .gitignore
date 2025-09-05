@@ -4,3 +4,6 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Inventory data (contains sensitive dealership information)
+data/inventory.csv

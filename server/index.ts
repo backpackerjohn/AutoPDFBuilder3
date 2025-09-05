@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { inventoryService } from "./services/inventoryService";
+import { join } from "path";
 
 const app = express();
 app.use(express.json());
@@ -51,6 +53,17 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Load inventory CSV at startup if it exists
+  const inventoryPath = join(process.cwd(), 'data', 'inventory.csv');
+  try {
+    await inventoryService.loadInventoryCSV(inventoryPath);
+    const stats = inventoryService.getInventoryStats();
+    log(`✓ Loaded inventory: ${stats.totalVehicles} vehicles, ${stats.uniqueMakes} makes`);
+  } catch (error) {
+    log(`⚠ Inventory CSV not found at ${inventoryPath} - stock lookup will be unavailable`);
+    log(`  Upload your inventory.csv file to the data/ directory to enable stock lookup`);
+  }
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

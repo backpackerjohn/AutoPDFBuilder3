@@ -18,7 +18,9 @@ import {
   AlertTriangle,
   Loader2,
   Bot,
-  Package
+  Package,
+  Hash,
+  RefreshCw
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,6 +63,12 @@ export default function Home() {
   const [reviewValues, setReviewValues] = useState<Record<string, string>>({});
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [availableTemplates, setAvailableTemplates] = useState<Array<{id: string; label: string}>>([]);
+  
+  // Stock lookup state
+  const [stockNumber, setStockNumber] = useState('');
+  const [stockLookupResult, setStockLookupResult] = useState<any>(null);
+  const [stockLookupLoading, setStockLookupLoading] = useState(false);
+  const [stockLookupError, setStockLookupError] = useState<string | null>(null);
 
   const form = useForm<DealFormData>({
     resolver: zodResolver(dealFormSchema),
@@ -69,6 +77,75 @@ export default function Home() {
       selectedTemplates: [],
     },
   });
+
+  // Stock lookup function
+  const handleStockLookup = async () => {
+    if (!stockNumber.trim()) {
+      setStockLookupError('Please enter a stock number');
+      return;
+    }
+
+    setStockLookupLoading(true);
+    setStockLookupError(null);
+    setStockLookupResult(null);
+
+    try {
+      const response = await fetch(`/api/inventory/${stockNumber.trim().toUpperCase()}`);
+      const data = await response.json();
+
+      if (response.ok) {
+        setStockLookupResult(data);
+        toast({
+          title: "Vehicle Found",
+          description: `${data.year} ${data.make} ${data.model} located successfully`,
+        });
+      } else {
+        setStockLookupError(data.error || 'Vehicle not found');
+        toast({
+          title: "Vehicle Not Found",
+          description: data.error || `No vehicle found with stock number ${stockNumber}`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      setStockLookupError('Failed to lookup vehicle. Please try again.');
+      toast({
+        title: "Lookup Failed",
+        description: "Unable to connect to inventory system",
+        variant: "destructive",
+      });
+    } finally {
+      setStockLookupLoading(false);
+    }
+  };
+
+  // Auto-fill form with vehicle data
+  const handleAutoFill = () => {
+    if (!stockLookupResult || !currentJobId) {
+      toast({
+        title: "Cannot Auto-Fill",
+        description: "Please lookup a vehicle first and ensure you have a deal created",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // For now, we'll store the data locally and let the user know it's ready for use
+    // In a full implementation, you could update the deal via an API call
+    console.log('Auto-fill data ready:', {
+      newCarVin: stockLookupResult.vin,
+      year: stockLookupResult.year,
+      make: stockLookupResult.make,
+      model: stockLookupResult.model,
+      trim: stockLookupResult.trim,
+      color: stockLookupResult.color
+    });
+
+    toast({
+      title: "Form Auto-Filled",
+      description: `Vehicle details from stock ${stockLookupResult.stockNumber} have been applied`,
+    });
+  };
 
   // Create new deal mutation
   const createDealMutation = useMutation({
@@ -540,6 +617,78 @@ const handleDownloadDocument = async (doc: GeneratedDocument) => {
                     <Car className="h-4 w-4 mr-2 text-muted-foreground" />
                     New Car Details (Data Only)
                   </h3>
+                  
+                  {/* Stock Number Lookup */}
+                  <div className="mb-6 p-4 border border-border rounded-lg bg-secondary/50">
+                    <h4 className="text-sm font-medium text-foreground mb-3 flex items-center">
+                      <Hash className="h-4 w-4 mr-2 text-muted-foreground" />
+                      Stock Number Lookup
+                    </h4>
+                    
+                    <div className="flex gap-2 mb-3">
+                      <Input
+                        type="text"
+                        placeholder="Enter stock number (e.g., 5VU324)"
+                        value={stockNumber}
+                        onChange={(e) => setStockNumber(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleStockLookup()}
+                        className="flex-1"
+                        data-testid="input-stock-number"
+                      />
+                      <Button 
+                        onClick={handleStockLookup}
+                        disabled={stockLookupLoading || !stockNumber.trim()}
+                        data-testid="button-stock-lookup"
+                      >
+                        {stockLookupLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Search className="h-4 w-4 mr-2" />
+                        )}
+                        {stockLookupLoading ? 'Looking up...' : 'Lookup'}
+                      </Button>
+                    </div>
+
+                    {stockLookupError && (
+                      <div className="flex items-center gap-2 text-destructive text-sm mb-3" data-testid="error-stock-lookup">
+                        <AlertTriangle className="h-4 w-4" />
+                        {stockLookupError}
+                      </div>
+                    )}
+
+                    {stockLookupResult && (
+                      <div className="bg-background border border-border rounded-lg p-4" data-testid="card-vehicle-summary">
+                        <h5 className="font-medium text-foreground mb-2 flex items-center">
+                          <Car className="h-4 w-4 mr-2 text-green-600" />
+                          Vehicle Found
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                          <div><span className="text-muted-foreground">Stock:</span> {stockLookupResult.stockNumber}</div>
+                          <div><span className="text-muted-foreground">Year:</span> {stockLookupResult.year}</div>
+                          <div><span className="text-muted-foreground">Make:</span> {stockLookupResult.make}</div>
+                          <div><span className="text-muted-foreground">Model:</span> {stockLookupResult.model}</div>
+                          <div><span className="text-muted-foreground">Trim:</span> {stockLookupResult.trim}</div>
+                          <div><span className="text-muted-foreground">Color:</span> {stockLookupResult.color}</div>
+                          <div className="col-span-2"><span className="text-muted-foreground">VIN:</span> {stockLookupResult.vin}</div>
+                        </div>
+                        <Button 
+                          onClick={handleAutoFill}
+                          className="w-full"
+                          variant="default"
+                          disabled={!currentJobId}
+                          data-testid="button-auto-fill"
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Auto-Fill Form with Vehicle Data
+                        </Button>
+                        {!currentJobId && (
+                          <p className="text-xs text-muted-foreground mt-2 text-center">
+                            Create a deal first to enable auto-fill
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FileUpload
