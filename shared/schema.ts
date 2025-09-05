@@ -117,3 +117,32 @@ export const VehicleSearchResultSchema = z.object({
 });
 
 export type VehicleSearchResult = z.infer<typeof VehicleSearchResultSchema>;
+
+// Persistent deals for cross-device functionality
+export const persistentDeals = pgTable("persistent_deals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  customerName: text("customer_name"),
+  vehicleInfo: jsonb("vehicle_info").$type<{
+    stockNumber?: string;
+    vin?: string;
+    year?: string;
+    make?: string;
+    model?: string;
+    trim?: string;
+    color?: string;
+  }>().default({}),
+  uploadedAssets: jsonb("uploaded_assets").$type<string[]>().default([]),
+  extractedData: jsonb("extracted_data").$type<ExtractedData>().default({}),
+  status: varchar("status", { length: 50 }).notNull().default('in_progress'),
+  createdAt: timestamp("created_at").default(sql`now()`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`now()`).notNull(),
+});
+
+export const insertPersistentDealSchema = createInsertSchema(persistentDeals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPersistentDeal = z.infer<typeof insertPersistentDealSchema>;
+export type PersistentDeal = typeof persistentDeals.$inferSelect;

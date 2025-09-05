@@ -6,7 +6,7 @@ import { geminiService } from "./services/gemini";
 import { pdfProcessor } from "./services/pdfProcessor";
 import { objectStorageService } from "./objectStorage";
 import { inventoryService } from "./services/inventoryService";
-import { insertDealProcessingJobSchema, insertVehicleSearchJobSchema, DocumentType, PDFTemplate, ExtractedData, ConfidenceLevel } from "@shared/schema";
+import { insertDealProcessingJobSchema, insertVehicleSearchJobSchema, insertPersistentDealSchema, DocumentType, PDFTemplate, ExtractedData, ConfidenceLevel } from "@shared/schema";
 import { z } from "zod";
 
 // Configure multer for file uploads
@@ -625,6 +625,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error performing vehicle search:", error);
       await storage.updateVehicleSearchJob(req.params.id, { status: 'failed' });
       res.status(500).json({ error: "Failed to perform vehicle search" });
+    }
+  });
+
+  // Persistent deals API routes for cross-device functionality
+  
+  // Create new persistent deal
+  app.post("/api/persistent-deals", async (req, res) => {
+    try {
+      const validatedData = insertPersistentDealSchema.parse(req.body);
+      const deal = await storage.createPersistentDeal(validatedData);
+      res.json({ deal });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid request data", details: error.errors });
+      }
+      console.error("Error creating persistent deal:", error);
+      res.status(500).json({ error: "Failed to create persistent deal" });
+    }
+  });
+
+  // List recent persistent deals
+  app.get("/api/persistent-deals", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      const deals = await storage.listRecentPersistentDeals(limit);
+      res.json({ deals });
+    } catch (error) {
+      console.error("Error listing persistent deals:", error);
+      res.status(500).json({ error: "Failed to list persistent deals" });
+    }
+  });
+
+  // Get specific persistent deal
+  app.get("/api/persistent-deals/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deal = await storage.getPersistentDeal(id);
+      
+      if (!deal) {
+        return res.status(404).json({ error: "Persistent deal not found" });
+      }
+
+      res.json({ deal });
+    } catch (error) {
+      console.error("Error getting persistent deal:", error);
+      res.status(500).json({ error: "Failed to get persistent deal" });
+    }
+  });
+
+  // Update persistent deal
+  app.put("/api/persistent-deals/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Validate input data (allow partial updates)
+      const validatedData = insertPersistentDealSchema.partial().parse(req.body);
+      
+      const deal = await storage.updatePersistentDeal(id, validatedData);
+      
+      if (!deal) {
+        return res.status(404).json({ error: "Persistent deal not found" });
+      }
+
+      res.json({ deal });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid request data", details: error.errors });
+      }
+      console.error("Error updating persistent deal:", error);
+      res.status(500).json({ error: "Failed to update persistent deal" });
+    }
+  });
+
+  // Upload and attach assets to persistent deal
+  app.post("/api/persistent-deals/:id/assets", upload.single('file'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Get the deal to verify it exists
+      const deal = await storage.getPersistentDeal(id);
+      if (!deal) {
+        return res.status(404).json({ error: "Persistent deal not found" });
+      }
+
+      // Store the file in memory for now (in production, upload to cloud storage)
+      const fileName = `${Date.now()}-${req.file.originalname}`;
+      const fileData = {
+        name: fileName,
+        originalName: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        buffer: req.file.buffer
+      };
+
+      // Store in deal files storage for this session
+      if (!dealFilesStorage.has(id)) {
+        dealFilesStorage.set(id, {});
+      }
+      dealFilesStorage.get(id)![fileName] = fileData as any;
+
+      // Update the deal with the new asset reference
+      const updatedAssets = [...(deal.uploadedAssets || []), fileName];
+      const updatedDeal = await storage.updatePersistentDeal(id, {
+        uploadedAssets: updatedAssets
+      });
+
+      res.json({ 
+        success: true,
+        fileName,
+        deal: updatedDeal
+      });
+
+    } catch (error) {
+      console.error("Error uploading asset to persistent deal:", error);
+      res.status(500).json({ error: "Failed to upload asset" });
     }
   });
 
