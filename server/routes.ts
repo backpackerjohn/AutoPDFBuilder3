@@ -713,21 +713,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Persistent deal not found" });
       }
 
-      // Store the file in memory for now (in production, upload to cloud storage)
+      // Generate unique file name with timestamp
       const fileName = `${Date.now()}-${req.file.originalname}`;
-      const fileData = {
-        name: fileName,
-        originalName: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        buffer: req.file.buffer
-      };
-
-      // Store in deal files storage for this session
-      if (!dealFilesStorage.has(id)) {
-        dealFilesStorage.set(id, {});
-      }
-      dealFilesStorage.get(id)![fileName] = fileData as any;
+      
+      // Upload file to object storage
+      const objectPath = await objectStorageService.uploadDealFile(
+        id,
+        fileName,
+        req.file.buffer,
+        req.file.mimetype
+      );
 
       // Update the deal with the new asset reference
       const updatedAssets = [...(deal.uploadedAssets || []), fileName];
@@ -735,15 +730,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         uploadedAssets: updatedAssets
       });
 
+      // Generate download URL for immediate access
+      const downloadURL = await objectStorageService.generateDealFileDownloadURL(id, fileName);
+
       res.json({ 
         success: true,
         fileName,
+        objectPath,
+        downloadURL,
         deal: updatedDeal
       });
 
     } catch (error) {
       console.error("Error uploading asset to persistent deal:", error);
       res.status(500).json({ error: "Failed to upload asset" });
+    }
+  });
+
+  // Get signed URLs for persistent deal files
+  app.get("/api/persistent-deals/:id/files", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Get the deal to verify it exists
+      const deal = await storage.getPersistentDeal(id);
+      if (!deal) {
+        return res.status(404).json({ error: "Persistent deal not found" });
+      }
+
+      // Get list of files and generate download URLs
+      const fileList = await objectStorageService.listDealFiles(id);
+      const filesWithUrls = await Promise.all(
+        fileList.map(async (file) => {
+          const downloadURL = await objectStorageService.generateDealFileDownloadURL(id, file.fileName);
+          return {
+            ...file,
+            downloadURL
+          };
+        })
+      );
+
+      res.json({ 
+        files: filesWithUrls
+      });
+
+    } catch (error) {
+      console.error("Error getting persistent deal files:", error);
+      res.status(500).json({ error: "Failed to get deal files" });
+    }
+  });
+
+  // Get upload URL for persistent deal file
+  app.post("/api/persistent-deals/:id/upload-url", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { fileName } = req.body;
+      
+      if (!fileName) {
+        return res.status(400).json({ error: "File name is required" });
+      }
+
+      // Get the deal to verify it exists
+      const deal = await storage.getPersistentDeal(id);
+      if (!deal) {
+        return res.status(404).json({ error: "Persistent deal not found" });
+      }
+
+      // Generate unique file name with timestamp
+      const uniqueFileName = `${Date.now()}-${fileName}`;
+      const uploadURL = await objectStorageService.generateDealFileUploadURL(id, uniqueFileName);
+
+      res.json({ 
+        uploadURL,
+        fileName: uniqueFileName
+      });
+
+    } catch (error) {
+      console.error("Error generating upload URL for persistent deal:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
     }
   });
 

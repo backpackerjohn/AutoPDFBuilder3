@@ -233,6 +233,141 @@ export class ObjectStorageService {
       },
     });
   }
+
+  // === Persistent Deal File Storage Methods ===
+
+  // Generate signed URL for uploading a file to a persistent deal
+  async generateDealFileUploadURL(dealId: string, fileName: string): Promise<string> {
+    const privateDir = this.getPrivateObjectDir();
+    const objectPath = `${privateDir}/deals/${dealId}/${fileName}`;
+    const { bucketName, objectName } = parseObjectPath(objectPath);
+    
+    return signObjectURL({
+      bucketName,
+      objectName,
+      method: "PUT",
+      ttlSec: 3600, // 1 hour
+    });
+  }
+
+  // Generate signed URL for downloading a persistent deal file
+  async generateDealFileDownloadURL(dealId: string, fileName: string): Promise<string | null> {
+    const privateDir = this.getPrivateObjectDir();
+    const objectPath = `${privateDir}/deals/${dealId}/${fileName}`;
+    const { bucketName, objectName } = parseObjectPath(objectPath);
+    
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    
+    // Check if file exists
+    const [exists] = await file.exists();
+    if (!exists) {
+      return null;
+    }
+    
+    return signObjectURL({
+      bucketName,
+      objectName,
+      method: "GET",
+      ttlSec: 3600, // 1 hour
+    });
+  }
+
+  // Upload a file directly to persistent deal storage
+  async uploadDealFile(dealId: string, fileName: string, fileBuffer: Buffer, contentType: string): Promise<string> {
+    const privateDir = this.getPrivateObjectDir();
+    const objectPath = `${privateDir}/deals/${dealId}/${fileName}`;
+    const { bucketName, objectName } = parseObjectPath(objectPath);
+    
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+
+    await file.save(fileBuffer, {
+      metadata: {
+        contentType,
+        'custom-deal-id': dealId,
+        'custom-original-filename': fileName,
+        'custom-uploaded-at': new Date().toISOString(),
+      },
+    });
+
+    return objectPath;
+  }
+
+  // List all files for a persistent deal
+  async listDealFiles(dealId: string): Promise<Array<{ fileName: string; size: number; uploadedAt: string; contentType: string }>> {
+    const privateDir = this.getPrivateObjectDir();
+    const prefix = `${privateDir}/deals/${dealId}/`.replace(/^\//, ''); // Remove leading slash for prefix
+    const { bucketName } = parseObjectPath(privateDir);
+    
+    const bucket = objectStorageClient.bucket(bucketName);
+    
+    try {
+      const [files] = await bucket.getFiles({
+        prefix,
+      });
+
+      const fileList = await Promise.all(
+        files.map(async (file) => {
+          const [metadata] = await file.getMetadata();
+          const fileName = file.name.split('/').pop() || '';
+          
+          return {
+            fileName,
+            size: parseInt(String(metadata.size || '0')),
+            uploadedAt: String(metadata.metadata?.['custom-uploaded-at'] || metadata.timeCreated || ''),
+            contentType: metadata.contentType || 'application/octet-stream',
+          };
+        })
+      );
+
+      return fileList.filter(f => f.fileName); // Remove empty filenames
+    } catch (error) {
+      console.error(`Error listing files for deal ${dealId}:`, error);
+      return [];
+    }
+  }
+
+  // Delete a file from persistent deal storage
+  async deleteDealFile(dealId: string, fileName: string): Promise<boolean> {
+    const privateDir = this.getPrivateObjectDir();
+    const objectPath = `${privateDir}/deals/${dealId}/${fileName}`;
+    const { bucketName, objectName } = parseObjectPath(objectPath);
+    
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    
+    try {
+      await file.delete();
+      return true;
+    } catch (error) {
+      console.error(`Error deleting file ${fileName} for deal ${dealId}:`, error);
+      return false;
+    }
+  }
+
+  // Delete all files for a persistent deal (cleanup)
+  async deleteDealFiles(dealId: string): Promise<number> {
+    const privateDir = this.getPrivateObjectDir();
+    const prefix = `${privateDir}/deals/${dealId}/`.replace(/^\//, '');
+    const { bucketName } = parseObjectPath(privateDir);
+    
+    const bucket = objectStorageClient.bucket(bucketName);
+    
+    try {
+      const [files] = await bucket.getFiles({
+        prefix,
+      });
+
+      const deletePromises = files.map(file => file.delete());
+      await Promise.all(deletePromises);
+      
+      return files.length;
+    } catch (error) {
+      console.error(`Error deleting files for deal ${dealId}:`, error);
+      return 0;
+    }
+  }
 }
 
 function parseObjectPath(path: string): {
@@ -254,6 +389,44 @@ function parseObjectPath(path: string): {
     bucketName,
     objectName,
   };
+}
+
+async function signObjectURL({
+  bucketName,
+  objectName,
+  method,
+  ttlSec,
+}: {
+  bucketName: string;
+  objectName: string;
+  method: "GET" | "PUT" | "DELETE" | "HEAD";
+  ttlSec: number;
+}): Promise<string> {
+  const request = {
+    bucket_name: bucketName,
+    object_name: objectName,
+    method,
+    expires_at: new Date(Date.now() + ttlSec * 1000).toISOString(),
+  };
+  const response = await fetch(
+    `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to sign object URL, errorcode: ${response.status}, ` +
+        `make sure you're running on Replit`
+    );
+  }
+
+  const { signed_url: signedURL } = await response.json();
+  return signedURL;
 }
 
 export const objectStorageService = new ObjectStorageService();

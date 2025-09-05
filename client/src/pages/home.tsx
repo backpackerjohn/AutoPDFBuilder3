@@ -20,7 +20,12 @@ import {
   Bot,
   Package,
   Hash,
-  RefreshCw
+  RefreshCw,
+  Save,
+  Upload,
+  Calendar,
+  Clock,
+  ArrowRight
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +34,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { downloadFile } from '../lib/download';
 import { FileUpload } from '@/components/file-upload';
@@ -69,6 +75,10 @@ export default function Home() {
   const [stockLookupResult, setStockLookupResult] = useState<any>(null);
   const [stockLookupLoading, setStockLookupLoading] = useState(false);
   const [stockLookupError, setStockLookupError] = useState<string | null>(null);
+
+  // Persistent deal state
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const [dealName, setDealName] = useState('');
 
   const form = useForm<DealFormData>({
     resolver: zodResolver(dealFormSchema),
@@ -284,9 +294,93 @@ export default function Home() {
     },
   });
 
+  // Save persistent deal mutation
+  const savePersistentDealMutation = useMutation({
+    mutationFn: async ({ name, description }: { name: string; description?: string }) => {
+      if (!currentJobId) throw new Error('No active deal to save');
+      
+      const dealData = {
+        name,
+        description,
+        dealInformation: form.getValues('dealInformation'),
+        selectedTemplates: form.getValues('selectedTemplates'),
+        uploadedAssets: Object.keys(uploadedFiles),
+        stockLookupResult,
+        extractedData: reviewData?.extractedData || {},
+        confidenceScores: reviewData?.confidenceScores || {},
+      };
+
+      const response = await apiRequest('POST', '/api/persistent-deals', dealData);
+      return response.json();
+    },
+    onSuccess: (result) => {
+      setSelectedDealId(result.id);
+      setDealName('');
+      queryClient.invalidateQueries({ queryKey: ['/api/persistent-deals'] });
+      toast({
+        title: 'Deal saved',
+        description: `Deal "${result.name}" has been saved for cross-device access.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Save failed',
+        description: 'Failed to save deal. Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Load persistent deal mutation
+  const loadPersistentDealMutation = useMutation({
+    mutationFn: async (dealId: string) => {
+      const response = await apiRequest('GET', `/api/persistent-deals/${dealId}`);
+      return response.json();
+    },
+    onSuccess: (deal) => {
+      // Reset current state
+      setCurrentJobId(null);
+      setUploadedFiles({});
+      setProcessingStatus({ isProcessing: false, currentStep: '', progress: 0 });
+      setShowReview(false);
+      setReviewFields([]);
+      setReviewValues({});
+      setGeneratedDocuments([]);
+
+      // Load deal data into form
+      form.setValue('dealInformation', deal.dealInformation || '');
+      form.setValue('selectedTemplates', deal.selectedTemplates || []);
+      
+      // Set stock lookup result if available
+      if (deal.stockLookupResult) {
+        setStockLookupResult(deal.stockLookupResult);
+        setStockNumber(deal.stockLookupResult.stockNumber || '');
+      }
+
+      setSelectedDealId(deal.id);
+      
+      toast({
+        title: 'Deal loaded',
+        description: `Deal "${deal.name}" has been loaded successfully.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Load failed',
+        description: 'Failed to load deal. Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   // Load available PDF templates
   const { data: templatesData } = useQuery<{ templates: string[] }>({
     queryKey: ['/api/templates'],
+  });
+
+  // Load recent persistent deals
+  const { data: recentDealsData } = useQuery<{ deals: any[] }>({
+    queryKey: ['/api/persistent-deals'],
   });
 
   useEffect(() => {
@@ -515,6 +609,77 @@ const handleDownloadDocument = async (doc: GeneratedDocument) => {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Recent Deals Section */}
+        {recentDealsData && recentDealsData.deals && recentDealsData.deals.length > 0 && (
+          <Card className="mb-8" data-testid="recent-deals-section">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-secondary text-secondary-foreground rounded-lg flex items-center justify-center">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">Recent Deals</CardTitle>
+                    <p className="text-muted-foreground">Load saved deals to continue processing on any device</p>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {recentDealsData.deals.slice(0, 6).map((deal) => (
+                  <div
+                    key={deal.id}
+                    className={`p-4 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                      selectedDealId === deal.id 
+                        ? 'border-primary bg-primary/5' 
+                        : 'border-border hover:border-muted-foreground'
+                    }`}
+                    onClick={() => loadPersistentDealMutation.mutate(deal.id)}
+                    data-testid={`deal-card-${deal.id}`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-foreground truncate">{deal.name}</h4>
+                        <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      
+                      {deal.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">{deal.description}</p>
+                      )}
+                      
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{new Date(deal.createdAt).toLocaleDateString()}</span>
+                        <div className="flex items-center space-x-2">
+                          {deal.uploadedAssets && deal.uploadedAssets.length > 0 && (
+                            <span className="flex items-center">
+                              <Upload className="h-3 w-3 mr-1" />
+                              {deal.uploadedAssets.length}
+                            </span>
+                          )}
+                          {deal.selectedTemplates && deal.selectedTemplates.length > 0 && (
+                            <span className="flex items-center">
+                              <FileText className="h-3 w-3 mr-1" />
+                              {deal.selectedTemplates.length}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {loadPersistentDealMutation.isPending && selectedDealId === deal.id && (
+                        <div className="flex items-center justify-center py-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Form {...form}>
           <div className="space-y-8">
             
@@ -836,7 +1001,7 @@ const handleDownloadDocument = async (doc: GeneratedDocument) => {
                 
                 {/* Generate Button */}
                 {!processingStatus.isProcessing && !showReview && generatedDocuments.length === 0 && (
-                  <div className="text-center">
+                  <div className="text-center space-y-4">
                     <Button
                       type="button"
                       size="lg"
@@ -852,6 +1017,70 @@ const handleDownloadDocument = async (doc: GeneratedDocument) => {
                       )}
                       Generate Documents
                     </Button>
+                    
+                    {/* Save Deal Button */}
+                    {(currentJobId || Object.keys(uploadedFiles).length > 0 || form.getValues('dealInformation') || stockLookupResult) && (
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            disabled={savePersistentDealMutation.isPending}
+                            data-testid="button-save-deal"
+                          >
+                            {savePersistentDealMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="h-4 w-4 mr-2" />
+                                Save Deal for Later
+                              </>
+                            )}
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Save Deal for Cross-Device Access</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div>
+                              <label className="text-sm font-medium text-foreground">Deal Name</label>
+                              <Input
+                                value={dealName}
+                                onChange={(e) => setDealName(e.target.value)}
+                                placeholder="Enter a name for this deal"
+                                className="mt-1"
+                                data-testid="input-deal-name"
+                              />
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              Save your current progress to continue on any device. Deal information, uploaded files, and vehicle data will be preserved.
+                            </div>
+                            <div className="flex justify-end space-x-2">
+                              <DialogTrigger asChild>
+                                <Button variant="outline">Cancel</Button>
+                              </DialogTrigger>
+                              <Button
+                                onClick={() => {
+                                  if (dealName.trim()) {
+                                    savePersistentDealMutation.mutate({ 
+                                      name: dealName.trim(),
+                                      description: form.getValues('dealInformation') || undefined
+                                    });
+                                  }
+                                }}
+                                disabled={!dealName.trim() || savePersistentDealMutation.isPending}
+                                data-testid="button-confirm-save"
+                              >
+                                Save Deal
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    )}
                   </div>
                 )}
 
