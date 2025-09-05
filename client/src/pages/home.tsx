@@ -79,6 +79,7 @@ export default function Home() {
   // Persistent deal state
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [dealName, setDealName] = useState('');
+  const [uploadedAssets, setUploadedAssets] = useState<string[]>([]);
 
   const form = useForm<DealFormData>({
     resolver: zodResolver(dealFormSchema),
@@ -210,8 +211,8 @@ export default function Home() {
     },
     onSuccess: (_result, { documentType }) => {
       toast({
-        title: 'Document processed',
-        description: `${documentType} uploaded and analyzed successfully.`,
+        title: 'File uploaded',
+        description: `${documentType} uploaded successfully.`,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/deals', currentJobId] });
     },
@@ -222,7 +223,7 @@ export default function Home() {
         return rest;
       });
       toast({
-        title: 'Upload failed',
+        title: 'Upload failed. Retry?',
         description: error?.message || 'Failed to process document. Please try again.',
         variant: 'destructive',
       });
@@ -357,6 +358,9 @@ export default function Home() {
         setStockNumber(deal.stockLookupResult.stockNumber || '');
       }
 
+      // Store uploaded assets (array of signed URLs)
+      setUploadedAssets(deal.uploadedAssets || []);
+
       setSelectedDealId(deal.id);
       
       toast({
@@ -404,6 +408,12 @@ export default function Home() {
   });
 
   const handleFileUpload = async (file: File, documentType: string) => {
+    // Show uploading toast
+    toast({
+      title: 'Uploading file...',
+      description: `Uploading ${file.name}`,
+    });
+
     // Ensure we have an active deal; use returned id immediately to avoid state race
     let dealId = currentJobId;
     if (!dealId) {
@@ -907,6 +917,27 @@ const handleDownloadDocument = async (doc: GeneratedDocument) => {
                     />
                   </div>
                 </div>
+                
+                {/* Uploaded Assets Display */}
+                {uploadedAssets.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-base font-medium text-foreground mb-4 flex items-center">
+                      <Upload className="h-4 w-4 mr-2 text-muted-foreground" />
+                      Previously Uploaded Files ({uploadedAssets.length})
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                      {uploadedAssets.map((url, index) => (
+                        <div key={url} className="relative group">
+                          <img 
+                            src={url} 
+                            alt={`Uploaded asset ${index + 1}`}
+                            className="h-24 w-24 object-cover rounded-md border border-border group-hover:opacity-80 transition-opacity" 
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 </div>
               </CardContent>
             </Card>

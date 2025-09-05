@@ -265,12 +265,15 @@ export class ObjectStorageService {
       return null;
     }
     
-    return signObjectURL({
+    const signedUrl = await signObjectURL({
       bucketName,
       objectName,
       method: "GET",
-      ttlSec: 3600, // 1 hour
+      ttlSec: 86400, // 24 hours
     });
+    
+    // Add cache busting parameter
+    return `${signedUrl}?v=${Date.now()}`;
   }
 
   // Upload a file directly to persistent deal storage

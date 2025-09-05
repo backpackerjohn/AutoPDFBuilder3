@@ -729,21 +729,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const downloadUrl = await objectStorageService.generateDealFileDownloadURL(id, fileName);
       
       if (!downloadUrl) {
+        // Clean up the uploaded file since we can't generate a URL
+        await objectStorageService.deleteDealFile(id, fileName);
         return res.status(500).json({ error: "Failed to generate download URL for uploaded file" });
       }
 
-      // Update the deal's uploadedAssets array with the signed URL
-      const updatedAssets = [...(deal.uploadedAssets || []), downloadUrl];
-      const updatedDeal = await storage.updatePersistentDeal(id, {
-        uploadedAssets: updatedAssets
-      });
+      // Update the deal's uploadedAssets array with the signed URL - wrap in try/catch for cleanup
+      try {
+        const updatedAssets = [...(deal.uploadedAssets || []), downloadUrl];
+        const updatedDeal = await storage.updatePersistentDeal(id, {
+          uploadedAssets: updatedAssets
+        });
 
-      res.json({ 
-        success: true,
-        fileName,
-        downloadUrl,
-        deal: updatedDeal
-      });
+        res.json({ 
+          success: true,
+          fileName,
+          downloadUrl,
+          deal: updatedDeal
+        });
+      } catch (dbError) {
+        // If DB update fails, clean up the orphaned object
+        await objectStorageService.deleteDealFile(id, fileName);
+        console.error("Database update failed, cleaned up orphaned file:", dbError);
+        throw dbError; // Re-throw so client sees the error
+      }
 
     } catch (error) {
       console.error("Error uploading asset to persistent deal:", error);
