@@ -228,12 +228,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
           extractionResult = { data: {}, confidence: {} };
       }
 
+      // SMART FILE BRIDGE: Store file persistently while maintaining existing functionality
+      let fileWithPersistentData = req.file as any;
+      
+      try {
+        // Generate unique filename for persistent storage
+        const persistentFileName = `${Date.now()}-${Math.random().toString(36).substring(2,8)}-${req.file.originalname}`;
+        
+        // Store in object storage for persistence
+        await objectStorageService.uploadDealFile(
+          id, // use same deal ID
+          persistentFileName,
+          req.file.buffer,
+          actualMimeType
+        );
+        
+        // Generate signed URL for persistent access
+        const persistentUrl = await objectStorageService.generateDealFileDownloadURL(id, persistentFileName);
+        
+        // Store the persistent URL in the uploaded file metadata
+        fileWithPersistentData = {
+          ...req.file,
+          persistentFileName,
+          persistentUrl,
+          uploadedAt: new Date().toISOString()
+        };
+        
+      } catch (error) {
+        console.warn('Persistent storage failed, continuing with memory storage:', error);
+        // Continue with regular flow even if persistent storage fails
+      }
+
       // Store the uploaded file for later PDF generation
       if (!dealFilesStorage.has(id)) {
         dealFilesStorage.set(id, {});
       }
       const jobFiles = dealFilesStorage.get(id)!;
-      jobFiles[documentType] = req.file as any;
+      jobFiles[documentType] = fileWithPersistentData;
 
       // Update job with extracted data
       const updatedJob = await storage.updateDealProcessingJob(id, {
